@@ -1,5 +1,6 @@
 import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
+import * as fc from "npm:fast-check";
 import undent, {
   undent as namedUndent,
   dedent,
@@ -19,8 +20,69 @@ import undent, {
 } from "./mod.ts";
 import type { UndentOptions, ResolvedOptions, AlignedValue, TrimMode, TrimSides, Undent } from "./mod.ts";
 
+// Competitors for oracle tests
+import npmDedent from "npm:dedent";
+import { outdent as npmOutdent } from "npm:outdent";
+
 // ---------------------------------------------------------------------------
-// Basic behaviour
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Extract non-whitespace characters from a string, preserving order. */
+function contentChars(s: string): string {
+  return s.replace(/[\s]/g, "");
+}
+
+/** Count lines in a string (number of newline sequences + 1). */
+function lineCount(s: string): number {
+  if (s.length === 0) return 0;
+  const { lines } = splitLines(s);
+  return lines.length;
+}
+
+/** Build a synthetic TemplateStringsArray. */
+function makeTSA(segments: string[]): TemplateStringsArray {
+  return Object.assign([...segments], { raw: [...segments] }) as unknown as TemplateStringsArray;
+}
+
+// ---------------------------------------------------------------------------
+// fast-check arbitraries
+// ---------------------------------------------------------------------------
+
+/** Arbitrary for strings with varied whitespace and content. */
+const arbMultilineString: fc.Arbitrary<string> = fc.array(
+  fc.oneof(
+    fc.constant(" "),
+    fc.constant("\t"),
+    fc.constant("\n"),
+    fc.constant("\r\n"),
+    fc.constant("\r"),
+    fc.constantFrom("a", "b", "c", "x", "y", "0", "1", "-", "_", ":"),
+  ),
+  { minLength: 0, maxLength: 80 },
+).map(arr => arr.join(""));
+
+/** Arbitrary for indented multi-line strings (more realistic inputs). */
+const arbIndentedBlock: fc.Arbitrary<string> = fc.tuple(
+  fc.integer({ min: 0, max: 12 }),
+  fc.array(fc.string({ minLength: 0, maxLength: 40 }), { minLength: 1, maxLength: 20 }),
+).map(([indent, lines]: [number, string[]]) => {
+  const pad = " ".repeat(indent);
+  return lines.map(l => l.trim().length === 0 ? "" : pad + l).join("\n");
+});
+
+/** Arbitrary for template-like strings (leading newline + indented body + trailing whitespace). */
+const arbTemplateLike: fc.Arbitrary<string> = fc.tuple(
+  fc.integer({ min: 2, max: 8 }),
+  fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 1, maxLength: 10 }),
+).map(([indent, lines]: [number, string[]]) => {
+  const pad = " ".repeat(indent);
+  const body = lines.map(l => pad + l).join("\n");
+  return "\n" + body + "\n" + " ".repeat(Math.max(0, indent - 2));
+});
+
+// ---------------------------------------------------------------------------
+// Basic behaviour (original 205 tests)
 // ---------------------------------------------------------------------------
 
 describe("undent", () => {
@@ -270,8 +332,6 @@ World
             Hello
           Less indented
         `;
-        // First content line has 12 spaces, "Less" has 10.
-        // strategy "first" strips 12 → second line clamped.
         expect(result).toBe("Hello\nLess indented");
       });
     });
@@ -314,14 +374,12 @@ World
       it("creates independent instances that don't affect each other", () => {
         const a = undent.with({ trim: { leading: "none" } });
         const b = undent.with({ trim: { trailing: "none" } });
-
         const resultA = a`
           Hello
         `;
         const resultB = b`
           Hello
         `;
-
         expect(resultA).toBe("\nHello");
         expect(resultB).toBe("Hello\n");
       });
@@ -333,7 +391,6 @@ World
           first
           second
         `;
-        // Leading newline preserved (trim leading: none) AND normalized to \r\n.
         expect(result).toBe("\r\nfirst\r\nsecond");
       });
     });
@@ -1365,6 +1422,823 @@ World
     it("AlignedValue is usable", () => {
       const a: AlignedValue = align("x");
       expect(isAligned(a)).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Property-based tests with fast-check
+  // =========================================================================
+
+  describe("property-based tests", () => {
+    const NUM_RUNS = 200;
+
+    describe("dedentString idempotence", () => {
+      it("dedentString(dedentString(s)) === dedentString(s)", () => {
+        fc.assert(
+          fc.property(arbMultilineString, (s) => {
+            const once = dedentString(s);
+            const twice = dedentString(once);
+            expect(twice).toBe(once);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("idempotence holds for indented blocks", () => {
+        fc.assert(
+          fc.property(arbIndentedBlock, (s) => {
+            const once = dedentString(s);
+            const twice = dedentString(once);
+            expect(twice).toBe(once);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("undent.string() idempotence", () => {
+      it("undent.string(undent.string(s)) === undent.string(s)", () => {
+        fc.assert(
+          fc.property(arbMultilineString, (s) => {
+            const once = undent.string(s);
+            const twice = undent.string(once);
+            expect(twice).toBe(once);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("splitLines / rejoinLines roundtrip", () => {
+      it("rejoinLines(splitLines(s)) === s for any string", () => {
+        fc.assert(
+          fc.property(fc.string({ minLength: 0, maxLength: 500 }), (s) => {
+            const { lines, seps } = splitLines(s);
+            expect(rejoinLines(lines, seps)).toBe(s);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("roundtrips strings with all newline types", () => {
+        fc.assert(
+          fc.property(arbMultilineString, (s) => {
+            const { lines, seps } = splitLines(s);
+            expect(rejoinLines(lines, seps)).toBe(s);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("lines.length === seps.length + 1", () => {
+        fc.assert(
+          fc.property(fc.string({ minLength: 0, maxLength: 500 }), (s) => {
+            const { lines, seps } = splitLines(s);
+            expect(lines.length).toBe(seps.length + 1);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("content preservation", () => {
+      it("undent.string() never destroys non-whitespace characters", () => {
+        fc.assert(
+          fc.property(arbIndentedBlock, (s) => {
+            const result = undent.string(s);
+            const inputContent = contentChars(s);
+            const outputContent = contentChars(result);
+            expect(outputContent).toBe(inputContent);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("dedentString() never destroys non-whitespace characters", () => {
+        fc.assert(
+          fc.property(arbMultilineString, (s) => {
+            const result = dedentString(s);
+            const inputContent = contentChars(s);
+            const outputContent = contentChars(result);
+            expect(outputContent).toBe(inputContent);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("line count invariant", () => {
+      it("output line count ≤ input line count (trim can reduce)", () => {
+        fc.assert(
+          fc.property(arbIndentedBlock, (s) => {
+            if (s.length === 0) return;
+            const result = undent.string(s);
+            if (result.length === 0) return; // empty output is fine
+            expect(lineCount(result)).toBeLessThanOrEqual(lineCount(s));
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("trim 'none' preserves line count for non-empty inputs", () => {
+        const keep = undent.with({ trim: "none" });
+        fc.assert(
+          fc.property(arbTemplateLike, (s) => {
+            const result = keep.string(s);
+            // With no trimming, line count should be preserved
+            expect(lineCount(result)).toBe(lineCount(s));
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("columnOffset invariants", () => {
+      it("always returns >= 0", () => {
+        fc.assert(
+          fc.property(fc.string({ minLength: 0, maxLength: 300 }), (s) => {
+            expect(columnOffset(s)).toBeGreaterThanOrEqual(0);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("never exceeds string length", () => {
+        fc.assert(
+          fc.property(fc.string({ minLength: 0, maxLength: 300 }), (s) => {
+            expect(columnOffset(s)).toBeLessThanOrEqual(s.length);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("newlineLengthAt invariants", () => {
+      it("always returns 0, 1, or 2", () => {
+        fc.assert(
+          fc.property(
+            fc.string({ minLength: 1, maxLength: 200 }),
+            fc.nat(),
+            (s, rawI) => {
+              const i = rawI % s.length;
+              const len = newlineLengthAt(s, i);
+              expect([0, 1, 2]).toContain(len);
+            },
+          ),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("alignText invariants", () => {
+      it("zero-width pad preserves text unchanged", () => {
+        fc.assert(
+          fc.property(arbMultilineString, (s) => {
+            expect(alignText(s, "")).toBe(s);
+          }),
+          { numRuns: NUM_RUNS },
+        );
+      });
+
+      it("first line is never padded", () => {
+        fc.assert(
+          fc.property(
+            arbMultilineString.filter(s => s.length > 0),
+            fc.integer({ min: 1, max: 8 }).map(n => " ".repeat(n)),
+            (s, pad) => {
+              const result = alignText(s, pad);
+              const firstLine = splitLines(result).lines[0];
+              const origFirstLine = splitLines(s).lines[0];
+              expect(firstLine).toBe(origFirstLine);
+            },
+          ),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+
+    describe("empty input stability", () => {
+      it("undent.string('') always returns ''", () => {
+        expect(undent.string("")).toBe("");
+      });
+
+      it("dedentString('') always returns ''", () => {
+        expect(dedentString("")).toBe("");
+      });
+    });
+
+    describe("cache consistency under varying interpolations", () => {
+      it("same TSA with different values produces correct results", () => {
+        fc.assert(
+          fc.property(
+            fc.string({ minLength: 1, maxLength: 20 }),
+            fc.string({ minLength: 1, maxLength: 20 }),
+            (a, b) => {
+              // These use the same template literal (same TSA identity)
+              function render(val: string) {
+                return undent`
+                  Hello ${val}
+                  World
+                `;
+              }
+              expect(render(a)).toBe(`Hello ${a}\nWorld`);
+              expect(render(b)).toBe(`Hello ${b}\nWorld`);
+            },
+          ),
+          { numRuns: NUM_RUNS },
+        );
+      });
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Oracle / comparison tests against npm:dedent and npm:outdent
+  // =========================================================================
+
+  describe("oracle comparison tests", () => {
+    describe("vs npm:dedent — basic dedenting", () => {
+      it("matches dedent on simple templates", () => {
+        const input = "\n    Hello\n    World\n  ";
+        const ours = undent.string(input);
+        // npm:dedent called as a function on a string
+        const theirs = npmDedent(input);
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches dedent on indented content with relative indent", () => {
+        const input = "\n      line1\n        indented\n      line3\n    ";
+        const ours = undent.string(input);
+        const theirs = npmDedent(input);
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches dedent on tagged template with interpolation", () => {
+        const name = "World";
+        const ours = undent`
+          Hello ${name}
+        `;
+        const theirs = npmDedent`
+          Hello ${name}
+        `;
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches dedent on multi-interpolation template", () => {
+        const a = "one", b = "two", c = "three";
+        const ours = undent`
+          ${a}
+          ${b}
+          ${c}
+        `;
+        const theirs = npmDedent`
+          ${a}
+          ${b}
+          ${c}
+        `;
+        expect(ours).toBe(theirs);
+      });
+    });
+
+    describe("vs npm:outdent — compatible subset", () => {
+      it("matches outdent on basic template (strategy: first, trim: one)", () => {
+        const compat = undent.with({ strategy: "first", trim: "one" });
+        const ours = compat`
+          Hello
+            World
+        `;
+        const theirs = npmOutdent`
+          Hello
+            World
+        `;
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches outdent with interpolation", () => {
+        const compat = undent.with({ strategy: "first", trim: "one" });
+        const name = "World";
+        const ours = compat`
+          Hello ${name}
+        `;
+        const theirs = npmOutdent`
+          Hello ${name}
+        `;
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches outdent trim behavior (preserves extra blank lines)", () => {
+        const compat = undent.with({ strategy: "first", trim: "one" });
+        const ours = compat`
+
+          Hello
+
+        `;
+        const theirs = npmOutdent`
+
+          Hello
+
+        `;
+        expect(ours).toBe(theirs);
+      });
+
+      it("matches outdent.string() on plain strings", () => {
+        const compat = undent.with({ strategy: "first", trim: "one" });
+        const input = "\n    Hello\n      World\n  ";
+        const ours = compat.string(input);
+        const theirs = npmOutdent.string(input);
+        expect(ours).toBe(theirs);
+      });
+    });
+
+    describe("property-based oracle: undent vs npm:dedent on generated inputs", () => {
+      // undent and npm:dedent agree on uniformly-indented blocks (all lines same indent).
+      // They differ on mixed-indent and trailing-whitespace edge cases.
+      const arbUniformBlock: fc.Arbitrary<string> = fc.tuple(
+        fc.integer({ min: 2, max: 8 }),
+        fc.array(
+          fc.string({ minLength: 1, maxLength: 20 })
+            .map(s => s.replace(/[\s]/g, "x"))
+            .filter(s => s.length > 0),
+          { minLength: 1, maxLength: 8 },
+        ),
+      ).map(([indent, lines]: [number, string[]]) => {
+        const pad = " ".repeat(indent);
+        const body = lines.map(l => pad + l).join("\n");
+        return "\n" + body + "\n" + " ".repeat(indent);
+      });
+
+      it("agrees with npm:dedent on uniformly-indented blocks", () => {
+        fc.assert(
+          fc.property(arbUniformBlock, (s: string) => {
+            const ours = undent.string(s);
+            const theirs = npmDedent(s);
+            expect(ours).toBe(theirs);
+          }),
+          { numRuns: 100 },
+        );
+      });
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Boundary value tests for trim modes
+  // =========================================================================
+
+  describe("trim boundary values", () => {
+    describe("trim 'one' — 0, 1, 2, 3 blank lines at each edge", () => {
+      const one = undent.with({ trim: "one" });
+
+      it("0 blank leading, 0 blank trailing", () => {
+        // Content starts immediately after backtick line
+        const result = one`
+          Hello
+        `;
+        expect(result).toBe("Hello");
+      });
+
+      it("1 blank leading, 1 blank trailing", () => {
+        const result = one`
+
+          Hello
+
+        `;
+        expect(result).toBe("\nHello\n");
+      });
+
+      it("2 blank leading, 2 blank trailing", () => {
+        const result = one`
+
+
+          Hello
+
+
+        `;
+        expect(result).toBe("\n\nHello\n\n");
+      });
+
+      it("3 blank leading, 3 blank trailing", () => {
+        const result = one`
+
+
+
+          Hello
+
+
+
+        `;
+        expect(result).toBe("\n\n\nHello\n\n\n");
+      });
+
+      it("0 blank leading, 2 blank trailing", () => {
+        const result = one`
+          Hello
+
+
+        `;
+        expect(result).toBe("Hello\n\n");
+      });
+
+      it("2 blank leading, 0 blank trailing", () => {
+        const result = one`
+
+
+          Hello
+        `;
+        expect(result).toBe("\n\nHello");
+      });
+    });
+
+    describe("trim 'all' — verifies all blank lines removed", () => {
+      it("1 blank leading, 1 blank trailing", () => {
+        const result = undent`
+
+          Hello
+
+        `;
+        expect(result).toBe("Hello");
+      });
+
+      it("3 blank leading, 3 blank trailing", () => {
+        const result = undent`
+
+
+
+          Hello
+
+
+
+        `;
+        expect(result).toBe("Hello");
+      });
+    });
+
+    describe("trim 'none' — verifies nothing removed", () => {
+      const none = undent.with({ trim: "none" });
+
+      it("1 blank leading, 1 blank trailing", () => {
+        const result = none`
+
+          Hello
+
+        `;
+        // Two newlines leading (backtick + blank), two trailing (blank + backtick)
+        expect(result).toBe("\n\nHello\n\n");
+      });
+    });
+
+    describe("dedentString trim boundaries", () => {
+      it("trim 'one' with 0 blank leading lines", () => {
+        expect(dedentString("  hello\n  world", "one", "one")).toBe("hello\nworld");
+      });
+
+      it("trim 'one' with 1 blank leading line", () => {
+        expect(dedentString("\n  hello\n", "one", "one")).toBe("hello");
+      });
+
+      it("trim 'one' with 2 blank leading lines", () => {
+        expect(dedentString("\n\n  hello\n\n", "one", "one")).toBe("\nhello\n");
+      });
+
+      it("trim 'one' with 3 blank leading lines", () => {
+        expect(dedentString("\n\n\n  hello\n\n\n", "one", "one")).toBe("\n\nhello\n\n");
+      });
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Cache correctness with varying interpolation values
+  // =========================================================================
+
+  describe("cache correctness", () => {
+    it("same template with different values produces different correct results", () => {
+      function render(name: string, count: number) {
+        return undent`
+          User: ${name}
+          Count: ${count}
+        `;
+      }
+      expect(render("Alice", 1)).toBe("User: Alice\nCount: 1");
+      expect(render("Bob", 99)).toBe("User: Bob\nCount: 99");
+      expect(render("", 0)).toBe("User: \nCount: 0");
+      expect(render("Charlie", -1)).toBe("User: Charlie\nCount: -1");
+    });
+
+    it("cache doesn't bleed between aligned and non-aligned values", () => {
+      function render(val: string) {
+        return undent`
+          prefix: ${val}
+          done
+        `;
+      }
+      expect(render("simple")).toBe("prefix: simple\ndone");
+      expect(render("multi\nline")).toBe("prefix: multi\nline\ndone");
+      expect(render("back to simple")).toBe("prefix: back to simple\ndone");
+    });
+
+    it("cache correctness with align wrapper on same template", () => {
+      function render(val: unknown) {
+        return undent`
+          data:
+            ${val}
+        `;
+      }
+      // Plain value
+      expect(render("hello")).toBe("data:\n  hello");
+      // Aligned value — same template, different value type
+      expect(render(align("a\nb"))).toBe("data:\n  a\n  b");
+      // Back to plain
+      expect(render("world")).toBe("data:\n  world");
+    });
+
+    it("anchored vs non-anchored calls on different templates stay independent", () => {
+      const anchored = undent`
+        ${undent.indent}
+          Hello
+      `;
+      const normal = undent`
+        Hello
+      `;
+      expect(anchored).toBe("Hello");
+      expect(normal).toBe("Hello");
+    });
+
+    it("rapid alternation between cached templates", () => {
+      for (let i = 0; i < 100; i++) {
+        const a = undent`
+          template-a: ${i}
+        `;
+        const b = undent`
+          template-b: ${i * 2}
+        `;
+        expect(a).toBe(`template-a: ${i}`);
+        expect(b).toBe(`template-b: ${i * 2}`);
+      }
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Exotic interpolation values
+  // =========================================================================
+
+  describe("exotic interpolation values", () => {
+    it("handles NaN", () => {
+      const result = undent`
+        ${NaN}
+      `;
+      expect(result).toBe("NaN");
+    });
+
+    it("handles Infinity", () => {
+      const result = undent`
+        ${Infinity}
+      `;
+      expect(result).toBe("Infinity");
+    });
+
+    it("handles -Infinity", () => {
+      const result = undent`
+        ${-Infinity}
+      `;
+      expect(result).toBe("-Infinity");
+    });
+
+    it("handles Symbol (via String())", () => {
+      const sym = Symbol("test");
+      const result = undent`
+        ${sym}
+      `;
+      expect(result).toBe("Symbol(test)");
+    });
+
+    it("handles BigInt", () => {
+      const result = undent`
+        ${BigInt(9007199254740991)}
+      `;
+      expect(result).toBe("9007199254740991");
+    });
+
+    it("handles empty array", () => {
+      const result = undent`
+        ${[]}
+      `;
+      expect(result).toBe("");
+    });
+
+    it("handles array with values", () => {
+      const result = undent`
+        ${[1, 2, 3]}
+      `;
+      expect(result).toBe("1,2,3");
+    });
+
+    it("handles nested object with toString", () => {
+      const obj = {
+        toString() {
+          return "custom\nwith\nnewlines";
+        },
+      };
+      const result = undent`
+        ${obj}
+      `;
+      expect(result).toBe("custom\nwith\nnewlines");
+    });
+
+    it("handles very long single value", () => {
+      const long = "x".repeat(100_000);
+      const result = undent`
+        ${long}
+      `;
+      expect(result).toBe(long);
+    });
+
+    it("handles value containing template-syntax characters ${}", () => {
+      const tricky = "before ${notAnInterp} after";
+      const result = undent`
+        ${tricky}
+      `;
+      expect(result).toBe("before ${notAnInterp} after");
+    });
+
+    it("handles value containing backticks", () => {
+      const result = undent`
+        ${"code: `hello`"}
+      `;
+      expect(result).toBe("code: `hello`");
+    });
+
+    it("handles value with null bytes", () => {
+      const result = undent`
+        ${"before\0after"}
+      `;
+      expect(result).toBe("before\0after");
+    });
+
+    it("handles value with only \\r line endings (with interpolation)", () => {
+      const val = "first\rsecond\rthird";
+      const result = undent`
+        ${val}
+      `;
+      expect(result).toBe("first\rsecond\rthird");
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: resolveOptions with all partial override combinations
+  // =========================================================================
+
+  describe("resolveOptions comprehensive coverage", () => {
+    const strategies = ["common", "first"] as const;
+    const trimModes: TrimMode[] = ["all", "one", "none"];
+    const newlines = [null, "\n", "\r\n", " "];
+    const alignValuesOpts = [true, false];
+
+    it("every strategy option resolves correctly", () => {
+      for (const strategy of strategies) {
+        const result = resolveOptions(DEFAULTS, { strategy });
+        expect(result.strategy).toBe(strategy);
+        // Other fields unchanged
+        expect(result.trimLeading).toBe(DEFAULTS.trimLeading);
+        expect(result.trimTrailing).toBe(DEFAULTS.trimTrailing);
+        expect(result.newline).toBe(DEFAULTS.newline);
+        expect(result.alignValues).toBe(DEFAULTS.alignValues);
+      }
+    });
+
+    it("every trim mode string resolves symmetrically", () => {
+      for (const trim of trimModes) {
+        const result = resolveOptions(DEFAULTS, { trim });
+        expect(result.trimLeading).toBe(trim);
+        expect(result.trimTrailing).toBe(trim);
+      }
+    });
+
+    it("every trim side combination resolves correctly", () => {
+      for (const leading of trimModes) {
+        for (const trailing of trimModes) {
+          const result = resolveOptions(DEFAULTS, { trim: { leading, trailing } });
+          expect(result.trimLeading).toBe(leading);
+          expect(result.trimTrailing).toBe(trailing);
+        }
+      }
+    });
+
+    it("partial trim object defaults missing sides to 'all'", () => {
+      const leadOnly = resolveOptions(DEFAULTS, { trim: { leading: "none" } });
+      expect(leadOnly.trimLeading).toBe("none");
+      expect(leadOnly.trimTrailing).toBe("all");
+
+      const trailOnly = resolveOptions(DEFAULTS, { trim: { trailing: "one" } });
+      expect(trailOnly.trimLeading).toBe("all");
+      expect(trailOnly.trimTrailing).toBe("one");
+    });
+
+    it("every newline option resolves correctly", () => {
+      for (const newline of newlines) {
+        const result = resolveOptions(DEFAULTS, { newline });
+        expect(result.newline).toBe(newline);
+      }
+    });
+
+    it("every alignValues option resolves correctly", () => {
+      for (const alignValues of alignValuesOpts) {
+        const result = resolveOptions(DEFAULTS, { alignValues });
+        expect(result.alignValues).toBe(alignValues);
+      }
+    });
+
+    it("multiple options set simultaneously", () => {
+      const result = resolveOptions(DEFAULTS, {
+        strategy: "first",
+        trim: { leading: "one", trailing: "none" },
+        newline: "\r\n",
+        alignValues: true,
+      });
+      expect(result.strategy).toBe("first");
+      expect(result.trimLeading).toBe("one");
+      expect(result.trimTrailing).toBe("none");
+      expect(result.newline).toBe("\r\n");
+      expect(result.alignValues).toBe(true);
+    });
+
+    it("chained resolution preserves earlier overrides", () => {
+      const step1 = resolveOptions(DEFAULTS, { strategy: "first" });
+      const step2 = resolveOptions(step1, { trim: "none" });
+      const step3 = resolveOptions(step2, { newline: "\r\n" });
+      expect(step3.strategy).toBe("first");
+      expect(step3.trimLeading).toBe("none");
+      expect(step3.trimTrailing).toBe("none");
+      expect(step3.newline).toBe("\r\n");
+    });
+
+    it("empty options object changes nothing", () => {
+      const custom: ResolvedOptions = {
+        strategy: "first",
+        trimLeading: "one",
+        trimTrailing: "none",
+        newline: "\r\n",
+        alignValues: true,
+      };
+      const result = resolveOptions(custom, {});
+      expect(result).toEqual(custom);
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: Mixed newlines with interpolation
+  // =========================================================================
+
+  describe("mixed newlines with interpolation", () => {
+    it("handles \\r only line endings with interpolation", () => {
+      const tsa = makeTSA(["\r    Hello ", "\r    World\r  "]);
+      const result = undent(tsa, "dear");
+      expect(result).toContain("Hello");
+      expect(result).toContain("dear");
+    });
+
+    it("handles every line having different indentation characters", () => {
+      const input = "  spaces\n\ttab\n  \tspaceTab\n\t  tabSpace";
+      const result = undent.string(input);
+      // Should not crash; content preserved
+      expect(contentChars(result)).toBe(contentChars(input));
+    });
+  });
+
+  // =========================================================================
+  // AUDIT: createUndent with edge-case options
+  // =========================================================================
+
+  describe("createUndent edge cases", () => {
+    it("works with empty options object", () => {
+      const u = undent.with({});
+      const result = u`
+        Hello
+      `;
+      expect(result).toBe("Hello");
+    });
+
+    it("works with all options set", () => {
+      const u = undent.with({
+        strategy: "first",
+        trim: { leading: "one", trailing: "one" },
+        newline: "\n",
+        alignValues: true,
+      });
+      const val = "a\nb";
+      const result = u`
+        prefix: ${val}
+      `;
+      expect(result).toBe("prefix: a\n        b");
+    });
+
+    it("chained .with() overrides are cumulative", () => {
+      const u = undent
+        .with({ strategy: "first" })
+        .with({ trim: "none" })
+        .with({ newline: "\n" });
+      const result = u`
+        Hello
+        World
+      `;
+      expect(result).toBe("\nHello\nWorld\n");
     });
   });
 });
