@@ -148,16 +148,19 @@ export const indent: unique symbol = Symbol("undent.indent");
 /** Brand for values wrapped by {@link align} or {@link embed}. */
 const ALIGNED: unique symbol = Symbol("undent.aligned");
 
+/** Internal symbol for per-value aligned-text memoization. */
+const ALIGNED_TEXT_CACHE: unique symbol = Symbol("undent.alignedTextCache");
+
 // Character codes used in hot loops.
 // Hex is compact for low-level scanning, so we document each value:
 // - 0x09 = TAB      (decimal 9)
 // - 0x0A = LF  \n   (decimal 10)
 // - 0x0D = CR  \r   (decimal 13)
 // - 0x20 = SPACE    (decimal 32)
-const CC_TAB = 0x09;
-const CC_LF = 0x0a;
-const CC_CR = 0x0d;
-const CC_SPACE = 0x20;
+const CC_TAB = 0x09; // TAB
+const CC_LF = 0x0a;  // LF
+const CC_CR = 0x0d;  // CR
+const CC_SPACE = 0x20; // SPACE
 
 /**
  * Bounded memoization for `embed(value)`.
@@ -168,6 +171,7 @@ const CC_SPACE = 0x20;
  */
 const EMBED_CACHE_MAX = 256;
 const EMBED_CACHE = new Map<string, string>();
+const ALIGNED_TEXT_CACHE_MAX = 8;
 
 /**
  * A branded wrapper telling the join logic to pad subsequent lines of
@@ -178,6 +182,10 @@ export interface AlignedValue {
   readonly [ALIGNED]: true;
   readonly value: string;
 }
+
+interface InternalAlignedValue extends AlignedValue {
+  [ALIGNED_TEXT_CACHE]?: Map<string, string>;
+};
 
 /**
  * Mark a value for alignment: subsequent lines of the stringified value
@@ -220,15 +228,18 @@ export function embed(value: string): AlignedValue {
 }
 
 function dedentStringForEmbed(value: string): string {
-  // Fast path: repeated static snippets are common in templating.
-  // Cache hit avoids re-running dedentString on identical values.
+  // Step 1: fast-path lookup for repeated snippets.
+  // Most embed() calls reuse static SQL/code blocks, so this avoids
+  // re-running dedentString(...) when the input is identical.
   const cached = EMBED_CACHE.get(value);
   if (cached !== undefined) return cached;
 
+  // Step 2: compute canonical embedded text once.
   const out = dedentString(value, "all", "all");
 
-  // Keep cache bounded and avoid pinning very large strings.
-  // Bound size preserves predictable memory behavior under varied inputs.
+  // Step 3: bounded-store policy.
+  // - Skip very large inputs to avoid long-lived large-string retention.
+  // - Evict oldest entry when cache is full for predictable memory bounds.
   if (value.length <= 64 * 1024) {
     if (EMBED_CACHE.size >= EMBED_CACHE_MAX) {
       const oldest = EMBED_CACHE.keys().next().value;
@@ -495,8 +506,8 @@ function isAnchoredCall(tag: Undent | null, strings: TemplateStringsArray, value
   let hasNl = false;
   for (let i = 0; i < s0.length; i++) {
     const c = s0.charCodeAt(i);
-    if (c === 0x0a || c === 0x0d) { hasNl = true; continue; }
-    if (c === 0x20 || c === 0x09) continue;
+    if (c === CC_LF || c === CC_CR) { hasNl = true; continue; }
+    if (c === CC_SPACE || c === CC_TAB) continue;
     return false; // non-whitespace content before marker
   }
   if (!hasNl) return false;
@@ -505,7 +516,7 @@ function isAnchoredCall(tag: Undent | null, strings: TemplateStringsArray, value
   const s1 = strings[1];
   if (s1.length === 0) return true;
   const c0 = s1.charCodeAt(0);
-  return c0 === 0x0a || c0 === 0x0d;
+  return c0 === CC_LF || c0 === CC_CR;
 }
 
 // --- Indent detection ----------------------------------------------------
@@ -940,7 +951,7 @@ function trimLeadingBlankLinesOne(text: string): number {
 
   while (i < len) {
     const c = text.charCodeAt(i);
-    if (c !== 0x20 && c !== 0x09) break;
+    if (c !== CC_SPACE && c !== CC_TAB) break;
     i++;
   }
 
@@ -961,7 +972,7 @@ function trimLeadingBlankLinesAll(text: string): number {
     let i = start;
     while (i < text.length) {
       const c = text.charCodeAt(i);
-      if (c !== 0x20 && c !== 0x09) break;
+      if (c !== CC_SPACE && c !== CC_TAB) break;
       i++;
     }
     const nlLen = newlineLengthAt(text, i);
@@ -983,17 +994,17 @@ function trimTrailingBlankLinesOne(text: string): number {
   let i = text.length - 1;
   while (i >= 0) {
     const c = text.charCodeAt(i);
-    if (c !== 0x20 && c !== 0x09) break;
+    if (c !== CC_SPACE && c !== CC_TAB) break;
     i--;
   }
 
   if (i < 0) return text.length;
 
   const c = text.charCodeAt(i);
-  if (c === 0x0a) {
-    return i > 0 && text.charCodeAt(i - 1) === 0x0d ? i - 1 : i;
+  if (c === CC_LF) {
+    return i > 0 && text.charCodeAt(i - 1) === CC_CR ? i - 1 : i;
   }
-  if (c === 0x0d) return i;
+  if (c === CC_CR) return i;
   return text.length;
 }
 
@@ -1013,18 +1024,18 @@ function trimTrailingBlankLinesAll(text: string): number {
     let i = end - 1;
     while (i >= 0) {
       const c = text.charCodeAt(i);
-      if (c !== 0x20 && c !== 0x09) break;
+      if (c !== CC_SPACE && c !== CC_TAB) break;
       i--;
     }
 
     if (i < 0) return 0;
 
     const c = text.charCodeAt(i);
-    if (c === 0x0a) {
-      end = i > 0 && text.charCodeAt(i - 1) === 0x0d ? i - 1 : i;
+    if (c === CC_LF) {
+      end = i > 0 && text.charCodeAt(i - 1) === CC_CR ? i - 1 : i;
       continue;
     }
-    if (c === 0x0d) {
+    if (c === CC_CR) {
       end = i;
       continue;
     }
@@ -1064,7 +1075,12 @@ function joinAligned(
     const wrapped = isAligned(raw);
     const text = wrapped ? raw.value : String(raw);
 
-    if (wrapped || (alignAll && text.includes("\n"))) {
+    if (wrapped) {
+      // Wrapped values always align. For hot loops with repeated values,
+      // this path memoizes alignment by pad width and reuses results.
+      const pad = " ".repeat(columnOffset(out));
+      out += getAlignedWrappedText(raw, pad);
+    } else if (alignAll && hasNewline(text)) {
       out += alignText(text, " ".repeat(columnOffset(out)));
     } else {
       out += text;
@@ -1155,6 +1171,52 @@ export function alignText(text: string, pad: string): string {
   if (parts === null) return text;
   parts.push(text.slice(last));
   return parts.join("");
+}
+
+/** Return true if text contains any supported newline sequence. */
+function hasNewline(text: string): boolean {
+  return text.indexOf("\n") !== -1 || text.indexOf("\r") !== -1;
+}
+
+/**
+ * Align wrapped values with a small per-value cache keyed by `pad`.
+ *
+ * Step by step:
+ * 1) Return as-is for single-line text (no alignment needed).
+ * 2) Check wrapped value's internal cache for this pad.
+ * 3) On miss, compute `alignText(value, pad)`.
+ * 4) Save result with bounded oldest-entry eviction.
+ *
+ * This targets hot `embed(...)` loops where both value and insertion
+ * column are repeated across iterations.
+ */
+function getAlignedWrappedText(value: AlignedValue, pad: string): string {
+  const text = value.value;
+  if (pad.length === 0 || !hasNewline(text)) {
+    return text;
+  }
+
+  const internal = value as InternalAlignedValue;
+  let cache = internal[ALIGNED_TEXT_CACHE];
+  if (cache) {
+    const hit = cache.get(pad);
+    if (hit !== undefined) return hit;
+  }
+
+  const aligned = alignText(text, pad);
+
+  if (!cache) {
+    cache = new Map<string, string>();
+    internal[ALIGNED_TEXT_CACHE] = cache;
+  }
+
+  if (cache.size >= ALIGNED_TEXT_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+
+  cache.set(pad, aligned);
+  return aligned;
 }
 
 // ==========================================================================
