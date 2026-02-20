@@ -25,18 +25,27 @@
  *  10.  Real-world scenarios — common usage patterns
  *  11.  Memory pressure — heap delta checks (before benchmark loop)
  */
+// deno-lint-ignore-file no-import-prefix no-unversioned-import
 
-import { run, bench, summary, boxplot, barplot, lineplot, do_not_optimize } from "npm:mitata";
+import {
+  barplot,
+  bench,
+  boxplot,
+  do_not_optimize,
+  lineplot,
+  run,
+  summary,
+} from "npm:mitata";
 
 import undent, {
   align,
-  embed,
-  createUndent,
-  dedentString,
-  splitLines,
-  rejoinLines,
   alignText,
   columnOffset,
+  createUndent,
+  dedentString,
+  embed,
+  rejoinLines,
+  splitLines,
 } from "./mod.ts";
 
 // Competitors
@@ -64,7 +73,9 @@ function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
     strings.push(i === 0 ? `\n${indent}` : `\n${indent}`);
   }
   strings.push(`\n  `);
-  return Object.assign([...strings], { raw: [...strings] }) as unknown as TemplateStringsArray;
+  return Object.assign([...strings], {
+    raw: [...strings],
+  }) as unknown as TemplateStringsArray;
 }
 
 /**
@@ -77,7 +88,8 @@ function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
 function alignLike(value: string, pad: string): string {
   return value.replace(
     /(\r\n|\r|\n)([^\r\n]*)/g,
-    (_m: string, nl: string, line: string) => line.trim().length === 0 ? nl : `${nl}${pad}${line}`,
+    (_m: string, nl: string, line: string) =>
+      line.trim().length === 0 ? nl : `${nl}${pad}${line}`,
   );
 }
 
@@ -145,7 +157,9 @@ function forceGCIfAvailable(): void {
     return;
   }
 
-  const maybeBun = globalThis as unknown as { Bun?: { gc?: (force?: boolean) => void } };
+  const maybeBun = globalThis as unknown as {
+    Bun?: { gc?: (force?: boolean) => void };
+  };
   if (typeof maybeBun.Bun?.gc === "function") {
     maybeBun.Bun.gc(true);
   }
@@ -241,7 +255,9 @@ function runMemoryTests(): void {
     const before = readHeapUsedBytes();
 
     if (before === null) {
-      console.log(`  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`);
+      console.log(
+        `  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`,
+      );
       continue;
     }
 
@@ -250,7 +266,9 @@ function runMemoryTests(): void {
     forceGCIfAvailable();
     const after = readHeapUsedBytes();
     if (after === null) {
-      console.log(`  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`);
+      console.log(
+        `  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`,
+      );
       continue;
     }
 
@@ -258,7 +276,9 @@ function runMemoryTests(): void {
     const ok = delta < t.threshold;
     const icon = ok ? "✓" : "⚠";
     console.log(
-      `  ${icon} ${t.name.padEnd(36)} heap Δ ${delta.toFixed(0).padStart(6)} KB` +
+      `  ${icon} ${t.name.padEnd(36)} heap Δ ${
+        delta.toFixed(0).padStart(6)
+      } KB` +
         `  (limit: ${t.threshold} KB)`,
     );
   }
@@ -399,7 +419,9 @@ bench(function* tag_N_interpolations(state: any) {
   const tsa = makeTSA(n);
   const vals = Array.from({ length: n }, (_, i) => String(i));
   yield {
-    [0]() { return vals.map((_, i) => String(i + Math.random())); },
+    [0]() {
+      return vals.map((_, i) => String(i + Math.random()));
+    },
     bench(freshVals: string[]) {
       do_not_optimize(undent(tsa, ...freshVals));
     },
@@ -428,8 +450,8 @@ lineplot(() => {
 
 bench("string: mixed newlines 1K", () => {
   const mixed = makeLines(500, "    ").replace(/\n/g, (_, i: number) =>
-    i % 3 === 0 ? "\r\n" : i % 3 === 1 ? "\r" : "\n"
-  ) + "\r\n" + makeLines(500, "    ");
+    i % 3 === 0 ? "\r\n" : i % 3 === 1 ? "\r" : "\n") +
+    "\r\n" + makeLines(500, "    ");
   do_not_optimize(undent.string(mixed));
 });
 
@@ -560,7 +582,9 @@ summary(() => {
   });
 
   bench("createUndent() from scratch", () => {
-    do_not_optimize(createUndent({ strategy: "first", trim: "one", newline: "\n" }));
+    do_not_optimize(
+      createUndent({ strategy: "first", trim: "one", newline: "\n" }),
+    );
   });
 });
 
@@ -787,7 +811,8 @@ barplot(() => {
   });
 
   bench("compose: anchor + embed", () => {
-    const sql = "    SELECT *\n    FROM users\n    WHERE active = true\n    ORDER BY name";
+    const sql =
+      "    SELECT *\n    FROM users\n    WHERE active = true\n    ORDER BY name";
     do_not_optimize(undent`
       ${undent.indent}
         query:
@@ -863,7 +888,8 @@ summary(() => {
   bench("real: code generation (fn + 3 interps)", () => {
     const name = "processUser";
     const args = "user: User, options: Options";
-    const body = "validate(user);\nconst result = transform(user, options);\nreturn result;";
+    const body =
+      "validate(user);\nconst result = transform(user, options);\nreturn result;";
     do_not_optimize(undent`
       export function ${name}(${args}) {
         ${align(body)}

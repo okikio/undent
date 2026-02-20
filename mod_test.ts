@@ -1,24 +1,32 @@
+// deno-lint-ignore-file no-import-prefix no-unversioned-import
 import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import * as fc from "npm:fast-check";
 import undent, {
-  undent as namedUndent,
-  dedent,
-  outdent,
   align,
+  alignText,
+  columnOffset,
+  dedent,
+  dedentString,
+  DEFAULTS,
   embed,
   indent,
   isAligned,
-  DEFAULTS,
-  resolveOptions,
-  dedentString,
-  alignText,
-  splitLines,
-  rejoinLines,
-  columnOffset,
   newlineLengthAt,
+  outdent,
+  rejoinLines,
+  resolveOptions,
+  splitLines,
+  undent as namedUndent,
 } from "./mod.ts";
-import type { UndentOptions, ResolvedOptions, AlignedValue, TrimMode, TrimSides, Undent } from "./mod.ts";
+import type {
+  AlignedValue,
+  ResolvedOptions,
+  TrimMode,
+  TrimSides,
+  Undent,
+  UndentOptions,
+} from "./mod.ts";
 
 // Competitors for oracle tests
 import npmDedent from "npm:dedent";
@@ -42,7 +50,9 @@ function lineCount(s: string): number {
 
 /** Build a synthetic TemplateStringsArray. */
 function makeTSA(segments: string[]): TemplateStringsArray {
-  return Object.assign([...segments], { raw: [...segments] }) as unknown as TemplateStringsArray;
+  return Object.assign([...segments], {
+    raw: [...segments],
+  }) as unknown as TemplateStringsArray;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,24 +70,30 @@ const arbMultilineString: fc.Arbitrary<string> = fc.array(
     fc.constantFrom("a", "b", "c", "x", "y", "0", "1", "-", "_", ":"),
   ),
   { minLength: 0, maxLength: 80 },
-).map(arr => arr.join(""));
+).map((arr) => arr.join(""));
 
 /** Arbitrary for indented multi-line strings (more realistic inputs). */
 const arbIndentedBlock: fc.Arbitrary<string> = fc.tuple(
   fc.integer({ min: 0, max: 12 }),
-  fc.array(fc.string({ minLength: 0, maxLength: 40 }), { minLength: 1, maxLength: 20 }),
+  fc.array(fc.string({ minLength: 0, maxLength: 40 }), {
+    minLength: 1,
+    maxLength: 20,
+  }),
 ).map(([indent, lines]: [number, string[]]) => {
   const pad = " ".repeat(indent);
-  return lines.map(l => l.trim().length === 0 ? "" : pad + l).join("\n");
+  return lines.map((l) => l.trim().length === 0 ? "" : pad + l).join("\n");
 });
 
 /** Arbitrary for template-like strings (leading newline + indented body + trailing whitespace). */
 const arbTemplateLike: fc.Arbitrary<string> = fc.tuple(
   fc.integer({ min: 2, max: 8 }),
-  fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 1, maxLength: 10 }),
+  fc.array(fc.string({ minLength: 1, maxLength: 30 }), {
+    minLength: 1,
+    maxLength: 10,
+  }),
 ).map(([indent, lines]: [number, string[]]) => {
   const pad = " ".repeat(indent);
-  const body = lines.map(l => pad + l).join("\n");
+  const body = lines.map((l) => pad + l).join("\n");
   return "\n" + body + "\n" + " ".repeat(Math.max(0, indent - 2));
 });
 
@@ -291,7 +307,9 @@ World
       });
 
       it("asymmetric trim — leading: none, trailing: all", () => {
-        const asym = undent.with({ trim: { leading: "none", trailing: "all" } });
+        const asym = undent.with({
+          trim: { leading: "none", trailing: "all" },
+        });
         const result = asym`
           Hello
         `;
@@ -299,7 +317,9 @@ World
       });
 
       it("asymmetric trim — leading: all, trailing: none", () => {
-        const asym = undent.with({ trim: { leading: "all", trailing: "none" } });
+        const asym = undent.with({
+          trim: { leading: "all", trailing: "none" },
+        });
         const result = asym`
           Hello
         `;
@@ -307,7 +327,9 @@ World
       });
 
       it("asymmetric trim — leading: one, trailing: none", () => {
-        const asym = undent.with({ trim: { leading: "one", trailing: "none" } });
+        const asym = undent.with({
+          trim: { leading: "one", trailing: "none" },
+        });
         const result = asym`
 
           Hello
@@ -449,7 +471,8 @@ World
 
       it("handles code generation pattern", () => {
         const ua = undent.with({ alignValues: true });
-        const methods = "greet() {\n  console.log('hi');\n}\n\nbye() {\n  console.log('bye');\n}";
+        const methods =
+          "greet() {\n  console.log('hi');\n}\n\nbye() {\n  console.log('bye');\n}";
         const result = ua`
           class Foo {
             ${methods}
@@ -576,7 +599,9 @@ World
     it("satisfies Undent interface at runtime", () => {
       const tag: unknown = undent;
       expect(typeof tag).toBe("function");
-      expect(typeof (tag as Record<string, unknown>)["string"]).toBe("function");
+      expect(typeof (tag as Record<string, unknown>)["string"]).toBe(
+        "function",
+      );
       expect(typeof (tag as Record<string, unknown>)["with"]).toBe("function");
       expect(typeof (tag as Record<string, unknown>)["indent"]).toBe("symbol");
     });
@@ -633,7 +658,8 @@ World
     });
 
     it("handles very long strings without stack overflow", () => {
-      const lines = Array.from({ length: 10_000 }, (_, i) => `    line${i}`).join("\n");
+      const lines = Array.from({ length: 10_000 }, (_, i) => `    line${i}`)
+        .join("\n");
       const tpl = "\n" + lines + "\n";
       const result = undent.string(tpl);
       expect(result.startsWith("line0")).toBe(true);
@@ -775,7 +801,9 @@ World
       const count = 100;
       const strings = Array.from({ length: count + 1 }, () => "\n    ");
       const raw = [...strings];
-      const tsa = Object.assign(strings, { raw }) as unknown as TemplateStringsArray;
+      const tsa = Object.assign(strings, {
+        raw,
+      }) as unknown as TemplateStringsArray;
       const vals = Array.from({ length: count }, (_, i) => String(i));
       const result = undent(tsa, ...vals);
       expect(result).toContain("0");
@@ -830,17 +858,19 @@ World
               level3:
                 ${align(val)}
         `;
-        expect(result).toBe("level1:\n  level2:\n    level3:\n      a\n      b\n      c");
+        expect(result).toBe(
+          "level1:\n  level2:\n    level3:\n      a\n      b\n      c",
+        );
       });
     });
 
     describe("mid-line insertion", () => {
       it("aligns to the actual column position, not line indent", () => {
-        const attrs = "class=\"box\"\nid=\"main\"";
+        const attrs = 'class="box"\nid="main"';
         const result = undent`
           <div ${align(attrs)}>
         `;
-        expect(result).toBe("<div class=\"box\"\n     id=\"main\">");
+        expect(result).toBe('<div class="box"\n     id="main">');
       });
 
       it("aligns after text content on the same line", () => {
@@ -848,7 +878,9 @@ World
         const result = undent`
           prefix: ${align(val)} suffix
         `;
-        expect(result).toBe("prefix: first\n        second\n        third suffix");
+        expect(result).toBe(
+          "prefix: first\n        second\n        third suffix",
+        );
       });
     });
 
@@ -934,7 +966,9 @@ World
           ${embed(extracted)}
         }
       `;
-      expect(result).toBe("function demo() {\n  console.log('a');\n  console.log('b');\n}");
+      expect(result).toBe(
+        "function demo() {\n  console.log('a');\n  console.log('b');\n}",
+      );
     });
 
     it("preserves relative indentation within the value", () => {
@@ -1002,7 +1036,9 @@ World
           ${align(inner)}
         }
       `;
-      expect(outer).toBe("function main() {\n  if (ready) {\n    go();\n  }\n}");
+      expect(outer).toBe(
+        "function main() {\n  if (ready) {\n    go();\n  }\n}",
+      );
     });
 
     it("embed works with nested undent output", () => {
@@ -1030,7 +1066,9 @@ World
           ${align(branch)}
         }
       `;
-      expect(root).toBe("function main() {\n  if (x) {\n    doStuff();\n  }\n}");
+      expect(root).toBe(
+        "function main() {\n  if (x) {\n    doStuff();\n  }\n}",
+      );
     });
 
     it("align + newline normalization works together", () => {
@@ -1071,7 +1109,9 @@ World
 
   describe("alignment scale", () => {
     it("aligns large multi-line values efficiently", () => {
-      const lines = Array.from({ length: 5_000 }, (_, i) => `line ${i}`).join("\n");
+      const lines = Array.from({ length: 5_000 }, (_, i) => `line ${i}`).join(
+        "\n",
+      );
       const result = undent`
         header:
           ${align(lines)}
@@ -1082,7 +1122,8 @@ World
     });
 
     it("embed handles large pre-indented values", () => {
-      const lines = Array.from({ length: 1_000 }, (_, i) => `    item ${i}`).join("\n");
+      const lines = Array.from({ length: 1_000 }, (_, i) => `    item ${i}`)
+        .join("\n");
       const result = undent`
         list:
           ${embed(lines)}
@@ -1313,7 +1354,9 @@ World
     });
 
     it("never destroys content", () => {
-      expect(dedentString("  hello\n    world\nfoo")).toBe("  hello\n    world\nfoo");
+      expect(dedentString("  hello\n    world\nfoo")).toBe(
+        "  hello\n    world\nfoo",
+      );
     });
   });
 
@@ -1335,13 +1378,19 @@ World
     });
 
     it("merges trim object", () => {
-      const result = resolveOptions(DEFAULTS, { trim: { leading: "one", trailing: "none" } });
+      const result = resolveOptions(DEFAULTS, {
+        trim: { leading: "one", trailing: "none" },
+      });
       expect(result.trimLeading).toBe("one");
       expect(result.trimTrailing).toBe("none");
     });
 
     it("preserves base values for unset fields", () => {
-      const base: ResolvedOptions = { ...DEFAULTS, strategy: "first", newline: "\r\n" };
+      const base: ResolvedOptions = {
+        ...DEFAULTS,
+        strategy: "first",
+        newline: "\r\n",
+      };
       const result = resolveOptions(base, { trim: "none" });
       expect(result.strategy).toBe("first");
       expect(result.newline).toBe("\r\n");
@@ -1355,7 +1404,9 @@ World
     });
 
     it("throws on invalid newline value", () => {
-      expect(() => resolveOptions(DEFAULTS, { newline: 42 as unknown as string })).toThrow();
+      expect(() =>
+        resolveOptions(DEFAULTS, { newline: 42 as unknown as string })
+      ).toThrow();
     });
   });
 
@@ -1602,8 +1653,8 @@ World
       it("first line is never padded", () => {
         fc.assert(
           fc.property(
-            arbMultilineString.filter(s => s.length > 0),
-            fc.integer({ min: 1, max: 8 }).map(n => " ".repeat(n)),
+            arbMultilineString.filter((s) => s.length > 0),
+            fc.integer({ min: 1, max: 8 }).map((n) => " ".repeat(n)),
             (s, pad) => {
               const result = alignText(s, pad);
               const firstLine = splitLines(result).lines[0];
@@ -1755,13 +1806,13 @@ World
         fc.integer({ min: 2, max: 8 }),
         fc.array(
           fc.string({ minLength: 1, maxLength: 20 })
-            .map(s => s.replace(/[\s]/g, "x"))
-            .filter(s => s.length > 0),
+            .map((s) => s.replace(/[\s]/g, "x"))
+            .filter((s) => s.length > 0),
           { minLength: 1, maxLength: 8 },
         ),
       ).map(([indent, lines]: [number, string[]]) => {
         const pad = " ".repeat(indent);
-        const body = lines.map(l => pad + l).join("\n");
+        const body = lines.map((l) => pad + l).join("\n");
         return "\n" + body + "\n" + " ".repeat(indent);
       });
 
@@ -1886,7 +1937,9 @@ World
 
     describe("dedentString trim boundaries", () => {
       it("trim 'one' with 0 blank leading lines", () => {
-        expect(dedentString("  hello\n  world", "one", "one")).toBe("hello\nworld");
+        expect(dedentString("  hello\n  world", "one", "one")).toBe(
+          "hello\nworld",
+        );
       });
 
       it("trim 'one' with 1 blank leading line", () => {
@@ -1898,7 +1951,9 @@ World
       });
 
       it("trim 'one' with 3 blank leading lines", () => {
-        expect(dedentString("\n\n\n  hello\n\n\n", "one", "one")).toBe("\n\nhello\n\n");
+        expect(dedentString("\n\n\n  hello\n\n\n", "one", "one")).toBe(
+          "\n\nhello\n\n",
+        );
       });
     });
   });
@@ -2113,7 +2168,9 @@ World
     it("every trim side combination resolves correctly", () => {
       for (const leading of trimModes) {
         for (const trailing of trimModes) {
-          const result = resolveOptions(DEFAULTS, { trim: { leading, trailing } });
+          const result = resolveOptions(DEFAULTS, {
+            trim: { leading, trailing },
+          });
           expect(result.trimLeading).toBe(leading);
           expect(result.trimTrailing).toBe(trailing);
         }

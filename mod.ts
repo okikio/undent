@@ -158,8 +158,8 @@ const ALIGNED_TEXT_CACHE: unique symbol = Symbol("undent.alignedTextCache");
 // - 0x0D = CR  \r   (decimal 13)
 // - 0x20 = SPACE    (decimal 32)
 const CC_TAB = 0x09; // TAB
-const CC_LF = 0x0a;  // LF
-const CC_CR = 0x0d;  // CR
+const CC_LF = 0x0a; // LF
+const CC_CR = 0x0d; // CR
 const CC_SPACE = 0x20; // SPACE
 
 /**
@@ -185,7 +185,7 @@ export interface AlignedValue {
 
 interface InternalAlignedValue extends AlignedValue {
   [ALIGNED_TEXT_CACHE]?: Map<string, string>;
-};
+}
 
 /**
  * Mark a value for alignment: subsequent lines of the stringified value
@@ -329,7 +329,10 @@ function createUndentFromResolved(opts: ResolvedOptions): Undent {
     cache: new WeakMap(),
   };
 
-  state.tag = function _tag(strings: TemplateStringsArray, ...values: unknown[]) {
+  state.tag = function _tag(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ) {
     return undentTag(state, strings, ...values);
   } as Undent;
 
@@ -374,7 +377,11 @@ function undentStringMethod(state: UndentState, input: string): string {
  * the join. If any aligned value is found, we restart with the
  * alignment-aware path.
  */
-function undentTag(state: UndentState, strings: TemplateStringsArray, ...values: unknown[]): string {
+function undentTag(
+  state: UndentState,
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+): string {
   const anchored = isAnchoredCall(state.tag, strings, values);
   const segments = getProcessedSegments(state, strings, anchored);
   const effectiveValues = anchored ? values.slice(1) : values;
@@ -413,16 +420,22 @@ function undentTag(state: UndentState, strings: TemplateStringsArray, ...values:
  * Merge user options onto a resolved base. Exported for consumers who
  * want to build custom configuration pipelines.
  */
-export function resolveOptions(base: ResolvedOptions, options: UndentOptions): ResolvedOptions {
+export function resolveOptions(
+  base: ResolvedOptions,
+  options: UndentOptions,
+): ResolvedOptions {
   const resolved: ResolvedOptions = { ...base };
 
   if (options.strategy !== undefined) resolved.strategy = options.strategy;
-  if (options.alignValues !== undefined) resolved.alignValues = options.alignValues;
+  if (options.alignValues !== undefined) {
+    resolved.alignValues = options.alignValues;
+  }
 
   if (options.newline !== undefined) {
     if (options.newline === null) resolved.newline = null;
-    else if (typeof options.newline === "string") resolved.newline = options.newline;
-    else throw new TypeError(`undent: "newline" must be a string or null`);
+    else if (typeof options.newline === "string") {
+      resolved.newline = options.newline;
+    } else throw new TypeError(`undent: "newline" must be a string or null`);
   }
 
   if (options.trim !== undefined) {
@@ -455,7 +468,11 @@ export function resolveOptions(base: ResolvedOptions, options: UndentOptions): R
  * 2. Detect indent level using the configured strategy.
  * 3. Strip indent, trim wrapper lines, normalize newlines.
  */
-function getProcessedSegments(state: UndentState, strings: TemplateStringsArray, anchored: boolean): string[] {
+function getProcessedSegments(
+  state: UndentState,
+  strings: TemplateStringsArray,
+  anchored: boolean,
+): string[] {
   let entry = state.cache.get(strings);
   if (!entry) {
     entry = {};
@@ -496,7 +513,11 @@ function getProcessedSegments(state: UndentState, strings: TemplateStringsArray,
  * 5. strings[1] starts with a newline or is empty (the marker is on
  *    its own line, not `text ${indent} more text`).
  */
-function isAnchoredCall(tag: Undent | null, strings: TemplateStringsArray, values: ReadonlyArray<unknown>): boolean {
+function isAnchoredCall(
+  tag: Undent | null,
+  strings: TemplateStringsArray,
+  values: ReadonlyArray<unknown>,
+): boolean {
   if (!tag || values.length === 0) return false;
 
   const v0 = values[0];
@@ -506,7 +527,10 @@ function isAnchoredCall(tag: Undent | null, strings: TemplateStringsArray, value
   let hasNl = false;
   for (let i = 0; i < s0.length; i++) {
     const c = s0.charCodeAt(i);
-    if (c === CC_LF || c === CC_CR) { hasNl = true; continue; }
+    if (c === CC_LF || c === CC_CR) {
+      hasNl = true;
+      continue;
+    }
     if (c === CC_SPACE || c === CC_TAB) continue;
     return false; // non-whitespace content before marker
   }
@@ -599,7 +623,8 @@ function minIndentInSegment(segment: string, endIsContent: boolean): number {
     const newlineChar = segment.charCodeAt(i);
     if (newlineChar !== CC_LF && newlineChar !== CC_CR) continue;
 
-    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length && segment.charCodeAt(i + 1) === CC_LF
+    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length &&
+        segment.charCodeAt(i + 1) === CC_LF
       ? 2
       : 1;
 
@@ -645,7 +670,8 @@ function firstIndentInSegment(segment: string, endIsContent: boolean): number {
     const newlineChar = segment.charCodeAt(i);
     if (newlineChar !== CC_LF && newlineChar !== CC_CR) continue;
 
-    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length && segment.charCodeAt(i + 1) === CC_LF
+    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length &&
+        segment.charCodeAt(i + 1) === CC_LF
       ? 2
       : 1;
 
@@ -683,7 +709,10 @@ function trailingIndentInSegment(segment: string): number {
   let count = 0;
   for (let i = segment.length - 1; i >= 0; i--) {
     const c = segment.charCodeAt(i);
-    if (c === CC_SPACE || c === CC_TAB) { count++; continue; }
+    if (c === CC_SPACE || c === CC_TAB) {
+      count++;
+      continue;
+    }
     if (c === CC_LF || c === CC_CR) return count;
     return -1; // non-whitespace before any newline
   }
@@ -740,10 +769,12 @@ function getStripIndentRegex(indentCount: number): RegExp {
  * **Normalization** replaces newline sequences in segments only.
  * Interpolated values are joined separately and never normalized.
  */
-function processStrings(strings: ReadonlyArray<string>, indentCount: number, opts: ResolvedOptions): string[] {
-  const strip = indentCount > 0
-    ? getStripIndentRegex(indentCount)
-    : null;
+function processStrings(
+  strings: ReadonlyArray<string>,
+  indentCount: number,
+  opts: ResolvedOptions,
+): string[] {
+  const strip = indentCount > 0 ? getStripIndentRegex(indentCount) : null;
 
   const out: string[] = new Array(strings.length);
   const last = strings.length - 1;
@@ -770,9 +801,11 @@ function processStrings(strings: ReadonlyArray<string>, indentCount: number, opt
     // trim but retain residual whitespace that trailing trim can't
     // catch (TRAILING_ALL requires a preceding newline). If both sides
     // trim "all" and only whitespace remains, it's empty content.
-    if (i === 0 && i === last
-      && opts.trimLeading === "all" && opts.trimTrailing === "all"
-      && s.length > 0 && s.trim().length === 0) {
+    if (
+      i === 0 && i === last &&
+      opts.trimLeading === "all" && opts.trimTrailing === "all" &&
+      s.length > 0 && s.trim().length === 0
+    ) {
       s = "";
     }
 
@@ -877,7 +910,10 @@ export function dedentString(
     // Step 3: Advance to the start of the next logical line.
     while (i < len) {
       const c = input.charCodeAt(i);
-      if (c === CC_LF) { i++; break; }
+      if (c === CC_LF) {
+        i++;
+        break;
+      }
       if (c === CC_CR) {
         i++;
         if (i < len && input.charCodeAt(i) === CC_LF) i++;
@@ -910,7 +946,10 @@ export function dedentString(
     }
     // Strip subsequent lines' indent with regex (matches processStrings)
     const reStrip = getStripIndentRegex(minIndent);
-    result = (firstWs > 0 ? input.slice(firstWs) : input).replace(reStrip, "$1");
+    result = (firstWs > 0 ? input.slice(firstWs) : input).replace(
+      reStrip,
+      "$1",
+    );
   }
 
   // Pass 3: compute trim boundaries, then slice once.
@@ -919,14 +958,14 @@ export function dedentString(
   const start = trimLeading === "none"
     ? 0
     : trimLeading === "all"
-      ? trimLeadingBlankLinesAll(result)
-      : trimLeadingBlankLinesOne(result);
+    ? trimLeadingBlankLinesAll(result)
+    : trimLeadingBlankLinesOne(result);
 
   const end = trimTrailing === "none"
     ? result.length
     : trimTrailing === "all"
-      ? trimTrailingBlankLinesAll(result)
-      : trimTrailingBlankLinesOne(result);
+    ? trimTrailingBlankLinesAll(result)
+    : trimTrailingBlankLinesOne(result);
 
   if (start >= end) return "";
 
@@ -1094,7 +1133,7 @@ function joinAligned(
       out += text;
     }
 
-    out += (strings[i] ?? "");
+    out += strings[i] ?? "";
   }
 
   return out;
@@ -1152,9 +1191,10 @@ export function alignText(text: string, pad: string): string {
       continue;
     }
 
-    const lineStart = c === CC_CR && i + 1 < len && text.charCodeAt(i + 1) === CC_LF
-      ? i + 2
-      : i + 1;
+    const lineStart =
+      c === CC_CR && i + 1 < len && text.charCodeAt(i + 1) === CC_LF
+        ? i + 2
+        : i + 1;
 
     let j = lineStart;
     let hasContent = false;
@@ -1304,7 +1344,10 @@ export function splitLines(text: string): { lines: string[]; seps: string[] } {
  * faster than `+=` concatenation for large inputs because V8's join
  * pre-computes total length and copies once.
  */
-export function rejoinLines(lines: ReadonlyArray<string>, seps: ReadonlyArray<string>): string {
+export function rejoinLines(
+  lines: ReadonlyArray<string>,
+  seps: ReadonlyArray<string>,
+): string {
   const lineCount = lines.length;
   if (lineCount === 0) return "";
   if (lineCount === 1) return lines[0] ?? "";
@@ -1328,7 +1371,7 @@ export function rejoinLines(lines: ReadonlyArray<string>, seps: ReadonlyArray<st
  *
  * Uses native `lastIndexOf` instead of a JS charcode loop for ~100x
  * speedup on long strings (V8 implements indexOf/lastIndexOf in C++).
- * 
+ *
  * Column offset = number of characters after the final newline sequence.
  *
  * Examples:
