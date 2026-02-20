@@ -38,6 +38,11 @@ import undent, {
 import npmDedent from "npm:dedent";
 import { outdent as npmOutdent } from "npm:outdent";
 
+// dedent has built-in multiline interpolation alignment via `alignValues`.
+// Reuse a preconfigured instance to avoid counting withOptions() creation
+// in per-iteration benchmark timings.
+const npmDedentAlign = npmDedent.withOptions({ alignValues: true });
+
 // =========================================================================
 // Data generators
 // =========================================================================
@@ -55,6 +60,33 @@ function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
   }
   strings.push(`\n  `);
   return Object.assign([...strings], { raw: [...strings] }) as unknown as TemplateStringsArray;
+}
+
+/**
+ * Competitor-equivalent helper for multiline interpolation alignment.
+ *
+ * outdent does not expose `align(...)`, so this simulates equivalent
+ * user-level behavior: keep first line as-is, pad non-blank subsequent
+ * lines with `pad`.
+ */
+function alignLike(value: string, pad: string): string {
+  return value.replace(
+    /(\r\n|\r|\n)([^\r\n]*)/g,
+    (_m: string, nl: string, line: string) => line.trim().length === 0 ? nl : `${nl}${pad}${line}`,
+  );
+}
+
+/**
+ * Competitor-equivalent helper for outdent `embed(...)` behavior:
+ * 1) dedent the snippet itself (`outdent.string(...)`),
+ * 2) then align it at interpolation column.
+ */
+function embedLike(
+  value: string,
+  dedentFn: (input: string) => string,
+  pad: string,
+): string {
+  return alignLike(dedentFn(value), pad);
 }
 
 // Pre-built data — allocated once, reused across iterations.
@@ -83,7 +115,7 @@ const LONG_LINE = "    " + "x".repeat(100_000);
 // 11. Memory pressure (runs first, before bench loop takes over)
 // =========================================================================
 
-async function runMemoryTests(): Promise<void> {
+function runMemoryTests(): void {
   const SEP = "─".repeat(64);
   console.log(`\n${SEP}`);
   console.log("  MEMORY PRESSURE TESTS");
@@ -195,7 +227,7 @@ async function runMemoryTests(): Promise<void> {
   console.log(`${SEP}\n`);
 }
 
-await runMemoryTests();
+runMemoryTests();
 
 // =========================================================================
 // 1. Competitor comparison — undent vs dedent vs outdent
@@ -383,6 +415,33 @@ boxplot(() => {
   }).gc("inner");
 });
 
+// Competitor comparison for alignment behavior.
+// dedent includes built-in alignValues; outdent does not include align(...),
+// so outdent uses an equivalent userland alignment helper.
+summary(() => {
+  bench("undent align: 500-line value", () => {
+    do_not_optimize(undent`
+      header:
+        ${align(ML_500)}
+    `);
+  });
+
+  bench("dedent alignValues: 500-line value", () => {
+    do_not_optimize(npmDedentAlign`
+      header:
+        ${ML_500}
+    `);
+  });
+
+  bench("outdent align-like: 500-line value", () => {
+    const v = alignLike(ML_500, "        ");
+    do_not_optimize(npmOutdent`
+      header:
+        ${v}
+    `);
+  });
+});
+
 summary(() => {
   bench("embed: 100-line pre-indented", () => {
     do_not_optimize(undent`
@@ -395,6 +454,35 @@ summary(() => {
     do_not_optimize(undent`
       code:
         ${embed(INDENTED_1K)}
+    `);
+  }).gc("inner");
+});
+
+// Competitor comparison for embed behavior.
+// Neither dedent nor outdent expose a direct embed(...) helper.
+// dedent uses built-in alignValues + dedent(value).
+// outdent uses equivalent userland: outdent.string(value) + alignLike(...).
+summary(() => {
+  bench("undent embed: 1K-line pre-indented", () => {
+    do_not_optimize(undent`
+      code:
+        ${embed(INDENTED_1K)}
+    `);
+  }).gc("inner");
+
+  bench("dedent embed-like (alignValues): 1K-line pre-indented", () => {
+    const v = npmDedent(INDENTED_1K);
+    do_not_optimize(npmDedentAlign`
+      code:
+        ${v}
+    `);
+  }).gc("inner");
+
+  bench("outdent embed-like: 1K-line pre-indented", () => {
+    const v = embedLike(INDENTED_1K, npmOutdent.string, "        ");
+    do_not_optimize(npmOutdent`
+      code:
+        ${v}
     `);
   }).gc("inner");
 });
@@ -452,6 +540,116 @@ summary(() => {
     for (let i = 0; i < 100; i++) {
       const tsa = makeTSA(2);
       last = undent(tsa, String(i));
+    }
+    do_not_optimize(last);
+  });
+});
+
+// Separate cache-behavior benchmarks for embed/embed-like patterns.
+// These isolate repeated-input (hot) vs unique-input (cold) performance.
+summary(() => {
+  bench("embed hot: undent ×100", () => {
+    const v = embed(INDENTED_1K);
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like hot: dedent ×100", () => {
+    const v = npmDedent(INDENTED_1K);
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmDedentAlign`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like hot: outdent ×100", () => {
+    const v = embedLike(INDENTED_1K, npmOutdent.string, "        ");
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmOutdent`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+});
+
+summary(() => {
+  bench("embed cold: undent unique ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const raw = `${INDENTED_1K}\n        unique_${i}`;
+      last = undent`
+        code:
+          ${embed(raw)}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like cold: dedent unique ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const raw = `${INDENTED_1K}\n        unique_${i}`;
+      const v = npmDedent(raw);
+      last = npmDedentAlign`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like cold: outdent unique ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const raw = `${INDENTED_1K}\n        unique_${i}`;
+      const v = embedLike(raw, npmOutdent.string, "        ");
+      last = npmOutdent`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+});
+
+// Competitor comparison for cold-start template cost (unique TSA each call).
+summary(() => {
+  bench("undent cold path ×100 (unique TSA)", () => {
+    let last: string = "";
+    for (let i = 0; i < 100; i++) {
+      const tsa = makeTSA(2);
+      last = undent(tsa, String(i));
+    }
+    do_not_optimize(last);
+  });
+
+  bench("dedent cold path ×100 (unique TSA)", () => {
+    let last: string = "";
+    for (let i = 0; i < 100; i++) {
+      const tsa = makeTSA(2);
+      last = npmDedent(tsa, String(i));
+    }
+    do_not_optimize(last);
+  });
+
+  bench("outdent cold path ×100 (unique TSA)", () => {
+    let last: string = "";
+    for (let i = 0; i < 100; i++) {
+      const tsa = makeTSA(2);
+      last = npmOutdent(tsa, String(i));
     }
     do_not_optimize(last);
   });

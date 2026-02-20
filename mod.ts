@@ -148,6 +148,27 @@ export const indent: unique symbol = Symbol("undent.indent");
 /** Brand for values wrapped by {@link align} or {@link embed}. */
 const ALIGNED: unique symbol = Symbol("undent.aligned");
 
+// Character codes used in hot loops.
+// Hex is compact for low-level scanning, so we document each value:
+// - 0x09 = TAB      (decimal 9)
+// - 0x0A = LF  \n   (decimal 10)
+// - 0x0D = CR  \r   (decimal 13)
+// - 0x20 = SPACE    (decimal 32)
+const CC_TAB = 0x09;
+const CC_LF = 0x0a;
+const CC_CR = 0x0d;
+const CC_SPACE = 0x20;
+
+/**
+ * Bounded memoization for `embed(value)`.
+ *
+ * `embed` is commonly used with repeated static snippets (SQL, code blocks,
+ * config fragments). Caching the dedented result avoids paying the
+ * `dedentString(..., "all", "all")` cost repeatedly for identical inputs.
+ */
+const EMBED_CACHE_MAX = 256;
+const EMBED_CACHE = new Map<string, string>();
+
 /**
  * A branded wrapper telling the join logic to pad subsequent lines of
  * this value to the insertion column. Created by {@link align} and
@@ -195,7 +216,28 @@ export function align(value: unknown): AlignedValue {
  * ```
  */
 export function embed(value: string): AlignedValue {
-  return { [ALIGNED]: true, value: dedentString(value, "all", "all") };
+  return { [ALIGNED]: true, value: dedentStringForEmbed(value) };
+}
+
+function dedentStringForEmbed(value: string): string {
+  // Fast path: repeated static snippets are common in templating.
+  // Cache hit avoids re-running dedentString on identical values.
+  const cached = EMBED_CACHE.get(value);
+  if (cached !== undefined) return cached;
+
+  const out = dedentString(value, "all", "all");
+
+  // Keep cache bounded and avoid pinning very large strings.
+  // Bound size preserves predictable memory behavior under varied inputs.
+  if (value.length <= 64 * 1024) {
+    if (EMBED_CACHE.size >= EMBED_CACHE_MAX) {
+      const oldest = EMBED_CACHE.keys().next().value;
+      if (oldest !== undefined) EMBED_CACHE.delete(oldest);
+    }
+    EMBED_CACHE.set(value, out);
+  }
+
+  return out;
 }
 
 /**
@@ -537,16 +579,25 @@ function detectFirstIndent(strings: ReadonlyArray<string>): number {
 function minIndentInSegment(segment: string, endIsContent: boolean): number {
   let min = Infinity;
 
+  // Micro-opt: inline newline detection instead of newlineLengthAt(...)
+  // function calls in this hot loop. Behavior remains identical:
+  // - '\n' => length 1
+  // - '\r\n' => length 2
+  // - '\r' => length 1
   for (let i = 0; i < segment.length; i++) {
-    const nlLen = newlineLengthAt(segment, i);
-    if (nlLen === 0) continue;
+    const newlineChar = segment.charCodeAt(i);
+    if (newlineChar !== CC_LF && newlineChar !== CC_CR) continue;
+
+    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length && segment.charCodeAt(i + 1) === CC_LF
+      ? 2
+      : 1;
 
     // Found a newline. Count whitespace after it.
-    let j = i + nlLen;
+    let j = i + newlineLength;
     let ind = 0;
     while (j < segment.length) {
-      const wc = segment.charCodeAt(j);
-      if (wc !== 0x20 && wc !== 0x09) break;
+      const whitespaceChar = segment.charCodeAt(j);
+      if (whitespaceChar !== CC_SPACE && whitespaceChar !== CC_TAB) break;
       ind++;
       j++;
     }
@@ -554,8 +605,8 @@ function minIndentInSegment(segment: string, endIsContent: boolean): number {
     if (j < segment.length) {
       // Something follows the whitespace. If it's content (not another
       // newline), this line's indent participates in the minimum.
-      const nc = segment.charCodeAt(j);
-      if (nc !== 0x0a && nc !== 0x0d) {
+      const nextChar = segment.charCodeAt(j);
+      if (nextChar !== CC_LF && nextChar !== CC_CR) {
         min = Math.min(min, ind);
       }
     } else if (endIsContent) {
@@ -578,22 +629,27 @@ function minIndentInSegment(segment: string, endIsContent: boolean): number {
  * indent instead of the minimum. Returns -1 if no content lines exist.
  */
 function firstIndentInSegment(segment: string, endIsContent: boolean): number {
+  // Same inlined newline detection rationale as minIndentInSegment.
   for (let i = 0; i < segment.length; i++) {
-    const nlLen = newlineLengthAt(segment, i);
-    if (nlLen === 0) continue;
+    const newlineChar = segment.charCodeAt(i);
+    if (newlineChar !== CC_LF && newlineChar !== CC_CR) continue;
 
-    let j = i + nlLen;
+    const newlineLength = newlineChar === CC_CR && i + 1 < segment.length && segment.charCodeAt(i + 1) === CC_LF
+      ? 2
+      : 1;
+
+    let j = i + newlineLength;
     let ind = 0;
     while (j < segment.length) {
-      const wc = segment.charCodeAt(j);
-      if (wc !== 0x20 && wc !== 0x09) break;
+      const whitespaceChar = segment.charCodeAt(j);
+      if (whitespaceChar !== CC_SPACE && whitespaceChar !== CC_TAB) break;
       ind++;
       j++;
     }
 
     if (j < segment.length) {
-      const nc = segment.charCodeAt(j);
-      if (nc !== 0x0a && nc !== 0x0d) return ind;
+      const nextChar = segment.charCodeAt(j);
+      if (nextChar !== CC_LF && nextChar !== CC_CR) return ind;
     } else if (endIsContent) {
       return ind;
     }
@@ -616,8 +672,8 @@ function trailingIndentInSegment(segment: string): number {
   let count = 0;
   for (let i = segment.length - 1; i >= 0; i--) {
     const c = segment.charCodeAt(i);
-    if (c === 0x20 || c === 0x09) { count++; continue; }
-    if (c === 0x0a || c === 0x0d) return count;
+    if (c === CC_SPACE || c === CC_TAB) { count++; continue; }
+    if (c === CC_LF || c === CC_CR) return count;
     return -1; // non-whitespace before any newline
   }
   return -1; // no newline found
@@ -626,7 +682,6 @@ function trailingIndentInSegment(segment: string): number {
 // --- Segment processing --------------------------------------------------
 
 const ANY_NEWLINE = /\r\n|\r|\n/g;
-const NEWLINE_AND_LINE = /(\r\n|\r|\n)([^\r\n]*)/g;
 const LEADING_ONE = /^[ \t]*(?:\r\n|\r|\n)/;
 const TRAILING_ONE = /(?:\r\n|\r|\n)[ \t]*$/;
 const LEADING_ALL = /^(?:[ \t]*(?:\r\n|\r|\n))+/;
@@ -785,18 +840,18 @@ export function dedentString(
   let minIndent = Infinity;
   let lineStart = 0;
   while (lineStart < len) {
-    // Count leading horizontal whitespace on the current logical line.
+    // Step 1: Count leading horizontal whitespace on this logical line.
     let i = lineStart;
     while (i < len) {
       const c = input.charCodeAt(i);
-      if (c !== 0x20 && c !== 0x09) break;
+      if (c !== CC_SPACE && c !== CC_TAB) break;
       i++;
     }
 
-    // If non-whitespace content follows, this line participates in min indent.
+    // Step 2: If non-whitespace content follows, include this line in minIndent.
     if (i < len) {
       const c = input.charCodeAt(i);
-      if (c !== 0x0a && c !== 0x0d) {
+      if (c !== CC_LF && c !== CC_CR) {
         const ws = i - lineStart;
         if (ws < minIndent) {
           minIndent = ws;
@@ -808,13 +863,13 @@ export function dedentString(
       break;
     }
 
-    // Advance to the start of the next logical line.
+    // Step 3: Advance to the start of the next logical line.
     while (i < len) {
       const c = input.charCodeAt(i);
-      if (c === 0x0a) { i++; break; }
-      if (c === 0x0d) {
+      if (c === CC_LF) { i++; break; }
+      if (c === CC_CR) {
         i++;
-        if (i < len && input.charCodeAt(i) === 0x0a) i++;
+        if (i < len && input.charCodeAt(i) === CC_LF) i++;
         break;
       }
       i++;
@@ -839,7 +894,7 @@ export function dedentString(
     let firstWs = 0;
     while (firstWs < minIndent && firstWs < len) {
       const c = input.charCodeAt(firstWs);
-      if (c !== 0x20 && c !== 0x09) break;
+      if (c !== CC_SPACE && c !== CC_TAB) break;
       firstWs++;
     }
     // Strip subsequent lines' indent with regex (matches processStrings)
@@ -1054,20 +1109,52 @@ export function alignText(text: string, pad: string): string {
     return text;
   }
 
-  // Match each newline followed by the rest of its line (up to the next
-  // newline or end of string). The callback pads non-blank lines.
-  return text.replace(
-    NEWLINE_AND_LINE,
-    (_match: string, nl: string, line: string) => {
-      // Fast blank check: scan for non-whitespace
-      for (let i = 0; i < line.length; i++) {
-        const c = line.charCodeAt(i);
-        if (c !== 0x20 && c !== 0x09) return nl + pad + line;
-      }
-      // Blank line → just the newline, no trailing whitespace
-      return nl;
-    },
-  );
+  // Scanner-based alignment (instead of regex callback) to reduce
+  // allocation churn on large multi-line values.
+  //
+  // Invariants preserved:
+  // - first line unchanged,
+  // - newline bytes preserved exactly,
+  // - blank/whitespace-only lines remain unpadded.
+  const len = text.length;
+  let i = 0;
+  let last = 0;
+  let parts: string[] | null = null;
+
+  while (i < len) {
+    const c = text.charCodeAt(i);
+    if (c !== CC_LF && c !== CC_CR) {
+      i++;
+      continue;
+    }
+
+    const lineStart = c === CC_CR && i + 1 < len && text.charCodeAt(i + 1) === CC_LF
+      ? i + 2
+      : i + 1;
+
+    let j = lineStart;
+    let hasContent = false;
+    while (j < len) {
+      const cc = text.charCodeAt(j);
+      if (cc === CC_LF || cc === CC_CR) break;
+      if (cc !== CC_SPACE && cc !== CC_TAB) hasContent = true;
+      j++;
+    }
+
+    if (hasContent) {
+      if (parts === null) parts = [];
+      // Copy unchanged span up to the line start, inject padding,
+      // then copy the line content. This keeps transformations local.
+      parts.push(text.slice(last, lineStart), pad, text.slice(lineStart, j));
+      last = j;
+    }
+
+    i = j;
+  }
+
+  if (parts === null) return text;
+  parts.push(text.slice(last));
+  return parts.join("");
 }
 
 // ==========================================================================
