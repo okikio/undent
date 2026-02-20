@@ -633,6 +633,33 @@ const LEADING_ALL = /^(?:[ \t]*(?:\r\n|\r|\n))+/;
 const TRAILING_ALL = /(?:(?:\r\n|\r|\n)[ \t]*)+$/;
 
 /**
+ * Cache strip-indentation regexes keyed by indent width.
+ *
+ * Why: compiling `new RegExp(...)` on every `.string()`/tag call adds
+ * avoidable overhead on hot paths. The pattern is deterministic for a
+ * given indent width, so we compile once and reuse.
+ */
+const STRIP_REGEX_CACHE = new Map<number, RegExp>();
+
+/**
+ * Return a cached strip-indentation regex for a specific indent count.
+ *
+ * Pattern shape:
+ * - `(\r\n|\r|\n)` captures the exact newline sequence.
+ * - `[ \t]{0,N}` removes up to N indentation chars after that newline.
+ *
+ * Replacement uses `$1`, so the newline is preserved byte-for-byte.
+ */
+function getStripIndentRegex(indentCount: number): RegExp {
+  let re = STRIP_REGEX_CACHE.get(indentCount);
+  if (!re) {
+    re = new RegExp(`(\\r\\n|\\r|\\n)[ \\t]{0,${indentCount}}`, "g");
+    STRIP_REGEX_CACHE.set(indentCount, re);
+  }
+  return re;
+}
+
+/**
  * Process an array of template segments through the strip → trim →
  * normalize pipeline.
  *
@@ -649,7 +676,7 @@ const TRAILING_ALL = /(?:(?:\r\n|\r|\n)[ \t]*)+$/;
  */
 function processStrings(strings: ReadonlyArray<string>, indentCount: number, opts: ResolvedOptions): string[] {
   const strip = indentCount > 0
-    ? new RegExp(`(\\r\\n|\\r|\\n)[ \\t]{0,${indentCount}}`, "g")
+    ? getStripIndentRegex(indentCount)
     : null;
 
   const out: string[] = new Array(strings.length);
@@ -717,10 +744,29 @@ function processStrings(strings: ReadonlyArray<string>, indentCount: number, opt
  * ever removes whitespace. Exported for direct use when you need
  * dedenting without the template tag machinery.
  *
- * Optimized two-pass approach: Pass 1 scans for minimum indent without
- * any array allocation. Pass 2 uses a single regex replace (the same
- * `(\r\n|\r|\n)[ \t]{0,N}` technique as the template pipeline) to
- * strip indent, leveraging V8's C++ regex engine for speed.
+ * Algorithm (two-pass, allocation-conscious):
+ *
+ * 1) Scan each logical line and compute `minIndent` across non-blank lines.
+ *    - Leading spaces/tabs are counted.
+ *    - Blank lines are ignored when computing the minimum.
+ *
+ * 2) Remove up to `minIndent` indentation from each line.
+ *    - First line is handled directly with `slice(...)`.
+ *    - Remaining lines use a cached regex replace to keep newline bytes.
+ *
+ * 3) Apply leading/trailing trim mode (`all`, `one`, `none`).
+ *    - Trim scanners return slice boundaries, then we slice once.
+ *
+ * Design goals:
+ * - Never remove non-whitespace content.
+ * - Preserve original newline sequences (`\n`, `\r\n`, `\r`).
+ * - Keep hot-path allocations minimal.
+ *
+ * Behavior contract:
+ * - Removes at most `minIndent` leading spaces/tabs from each logical line.
+ * - Lines with less than `minIndent` indentation lose only what they have.
+ * - Blank lines stay blank (no synthesized whitespace).
+ * - Newline bytes are copied through exactly (no normalization here).
  *
  * @param input - The string to dedent.
  * @param trimLeading - How to trim leading blank lines (default: "all").
@@ -734,36 +780,47 @@ export function dedentString(
   const len = input.length;
   if (len === 0) return "";
 
-  // ── Pass 1: find minimum indent (zero allocation) ──────────────
+  // Pass 1: find minimum indent across non-blank lines.
+  // Blank lines do not influence minIndent; they are structural only.
   let minIndent = Infinity;
-  let pos = 0;
-  while (pos < len) {
-    // Count leading whitespace at start of line
-    let ws = 0;
-    while (pos + ws < len) {
-      const c = input.charCodeAt(pos + ws);
+  let lineStart = 0;
+  while (lineStart < len) {
+    // Count leading horizontal whitespace on the current logical line.
+    let i = lineStart;
+    while (i < len) {
+      const c = input.charCodeAt(i);
       if (c !== 0x20 && c !== 0x09) break;
-      ws++;
+      i++;
     }
-    // Check if this line has content (not blank, not just a newline)
-    const afterWs = pos + ws;
-    if (afterWs < len) {
-      const c = input.charCodeAt(afterWs);
+
+    // If non-whitespace content follows, this line participates in min indent.
+    if (i < len) {
+      const c = input.charCodeAt(i);
       if (c !== 0x0a && c !== 0x0d) {
-        if (ws < minIndent) minIndent = ws;
-        if (minIndent === 0) break; // Can't go lower — skip remaining lines
+        const ws = i - lineStart;
+        if (ws < minIndent) {
+          minIndent = ws;
+          if (ws === 0) break; // Can't go lower.
+        }
       }
+    } else {
+      // Last line contained only spaces/tabs and no newline.
+      break;
     }
-    // Advance past rest of line + newline
-    pos = afterWs;
-    while (pos < len) {
-      const c = input.charCodeAt(pos);
-      if (c === 0x0a) { pos++; break; }
-      if (c === 0x0d) { pos++; if (pos < len && input.charCodeAt(pos) === 0x0a) pos++; break; }
-      pos++;
+
+    // Advance to the start of the next logical line.
+    while (i < len) {
+      const c = input.charCodeAt(i);
+      if (c === 0x0a) { i++; break; }
+      if (c === 0x0d) {
+        i++;
+        if (i < len && input.charCodeAt(i) === 0x0a) i++;
+        break;
+      }
+      i++;
     }
-    // If we didn't move past afterWs (last line, no newline), break
-    if (pos === afterWs && afterWs >= len) break;
+
+    lineStart = i;
   }
 
   // No content lines — input is all whitespace/newlines
@@ -772,11 +829,9 @@ export function dedentString(
     minIndent = 0;
   }
 
-  // ── Pass 2: strip indent via regex + trim ──────────────────────
-  // Uses the same regex approach as processStrings: a single
-  // (\r\n|\r|\n)[ \t]{0,N} replacement leverages V8's C++ regex engine.
-  // The first line's indent is handled separately via slice since the
-  // regex only matches indent after a newline.
+  // Pass 2: strip indent while preserving exact newline bytes.
+  // We handle the first line separately because the regex only targets
+  // indentation immediately following newline sequences.
   let result = input;
 
   if (minIndent > 0) {
@@ -788,19 +843,140 @@ export function dedentString(
       firstWs++;
     }
     // Strip subsequent lines' indent with regex (matches processStrings)
-    const reStrip = new RegExp(`(\\r\\n|\\r|\\n)[ \\t]{0,${minIndent}}`, "g");
+    const reStrip = getStripIndentRegex(minIndent);
     result = (firstWs > 0 ? input.slice(firstWs) : input).replace(reStrip, "$1");
   }
 
-  // Trim leading/trailing blank lines
-  if (trimLeading !== "none") {
-    result = result.replace(trimLeading === "all" ? LEADING_ALL : LEADING_ONE, "");
-  }
-  if (trimTrailing !== "none") {
-    result = result.replace(trimTrailing === "all" ? TRAILING_ALL : TRAILING_ONE, "");
+  // Pass 3: compute trim boundaries, then slice once.
+  // Returning numeric boundaries from helpers avoids extra intermediate
+  // strings from chained regex replacements.
+  const start = trimLeading === "none"
+    ? 0
+    : trimLeading === "all"
+      ? trimLeadingBlankLinesAll(result)
+      : trimLeadingBlankLinesOne(result);
+
+  const end = trimTrailing === "none"
+    ? result.length
+    : trimTrailing === "all"
+      ? trimTrailingBlankLinesAll(result)
+      : trimTrailingBlankLinesOne(result);
+
+  if (start >= end) return "";
+
+  if (start !== 0 || end !== result.length) {
+    result = result.slice(start, end);
   }
 
   return result;
+}
+
+/**
+ * Trim mode "one" for the leading edge.
+ *
+ * Removes at most one leading blank line, where a "blank line" is:
+ * optional horizontal whitespace + one newline sequence.
+ *
+ * Returns the start index to slice from.
+ */
+function trimLeadingBlankLinesOne(text: string): number {
+  let i = 0;
+  const len = text.length;
+
+  while (i < len) {
+    const c = text.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09) break;
+    i++;
+  }
+
+  if (i >= len) return 0;
+  const nlLen = newlineLengthAt(text, i);
+  return nlLen > 0 ? i + nlLen : 0;
+}
+
+/**
+ * Trim mode "all" for the leading edge.
+ *
+ * Repeatedly consumes leading blank lines until the first content line
+ * (or end-of-string), then returns the start index to slice from.
+ */
+function trimLeadingBlankLinesAll(text: string): number {
+  let start = 0;
+  while (start < text.length) {
+    let i = start;
+    while (i < text.length) {
+      const c = text.charCodeAt(i);
+      if (c !== 0x20 && c !== 0x09) break;
+      i++;
+    }
+    const nlLen = newlineLengthAt(text, i);
+    if (nlLen === 0) return start;
+    start = i + nlLen;
+  }
+  return start;
+}
+
+/**
+ * Trim mode "one" for the trailing edge.
+ *
+ * Removes at most one trailing blank line, where a "blank line" is:
+ * one newline sequence preceded/followed by optional spaces/tabs.
+ *
+ * Returns the exclusive end index to slice to.
+ */
+function trimTrailingBlankLinesOne(text: string): number {
+  let i = text.length - 1;
+  while (i >= 0) {
+    const c = text.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09) break;
+    i--;
+  }
+
+  if (i < 0) return text.length;
+
+  const c = text.charCodeAt(i);
+  if (c === 0x0a) {
+    return i > 0 && text.charCodeAt(i - 1) === 0x0d ? i - 1 : i;
+  }
+  if (c === 0x0d) return i;
+  return text.length;
+}
+
+/**
+ * Trim mode "all" for the trailing edge.
+ *
+ * Walks backward in blank-line sized chunks until content is reached.
+ * Handles `\n`, `\r\n`, and `\r` explicitly so newline preservation
+ * remains exact and deterministic.
+ *
+ * Returns the exclusive end index to slice to.
+ */
+function trimTrailingBlankLinesAll(text: string): number {
+  let end = text.length;
+
+  while (end > 0) {
+    let i = end - 1;
+    while (i >= 0) {
+      const c = text.charCodeAt(i);
+      if (c !== 0x20 && c !== 0x09) break;
+      i--;
+    }
+
+    if (i < 0) return 0;
+
+    const c = text.charCodeAt(i);
+    if (c === 0x0a) {
+      end = i > 0 && text.charCodeAt(i - 1) === 0x0d ? i - 1 : i;
+      continue;
+    }
+    if (c === 0x0d) {
+      end = i;
+      continue;
+    }
+    return end;
+  }
+
+  return end;
 }
 
 // ==========================================================================
@@ -870,12 +1046,11 @@ function joinAligned(
  * @param pad - A string of spaces to prepend to lines 2+.
  */
 export function alignText(text: string, pad: string): string {
-  if (pad.length === 0) return text;
+  if (pad.length === 0 || text.length === 0) {
+    return text;
+  }
 
-  const len = text.length;
-  if (len === 0) return text;
-  
-  if (pad.length === 0 || !text.includes("\n") && !text.includes("\r")) {
+  if (text.indexOf("\n") === -1 && text.indexOf("\r") === -1) {
     return text;
   }
 

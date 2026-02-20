@@ -100,7 +100,7 @@ async function runMemoryTests(): Promise<void> {
 
   const tests: MemTest[] = [
     {
-      name: ".string() × 10K (50,000 lines)",
+      name: ".string() × 10K (5K lines)",
       threshold: 1000,
       fn() {
         const input = makeLines(5000, "    ");
@@ -140,7 +140,7 @@ async function runMemoryTests(): Promise<void> {
       },
     },
     {
-      name: "align() × 10K (10K-line values)",
+      name: "align() × 10K (1K-line values)",
       threshold: 1000,
       fn() {
         let big = "";
@@ -157,7 +157,7 @@ async function runMemoryTests(): Promise<void> {
       },
     },
     {
-      name: "embed() × 10K (10K-line values)",
+      name: "embed() × 10K (1K-line values)",
       threshold: 1000,
       fn() {
         const indented = makeLines(1_000, "        ");
