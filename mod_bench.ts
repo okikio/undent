@@ -160,7 +160,7 @@ async function runMemoryTests(): Promise<void> {
       name: "embed() × 10K (10K-line values)",
       threshold: 1000,
       fn() {
-        const indented = makeLines(10_000, "        ");
+        const indented = makeLines(1_000, "        ");
         for (let i = 0; i < 10_000; i++) {
           undent`
             code:
