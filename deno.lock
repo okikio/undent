@@ -7,7 +7,10 @@
     "jsr:@std/internal@^1.0.10": "1.0.12",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/testing@*": "1.0.17",
-    "npm:mitata@*": "1.0.34"
+    "npm:dedent@*": "1.7.1",
+    "npm:fast-check@*": "4.5.3",
+    "npm:mitata@*": "1.0.34",
+    "npm:outdent@*": "0.8.0"
   },
   "jsr": {
     "@std/assert@1.0.18": {
@@ -35,8 +38,23 @@
     }
   },
   "npm": {
+    "dedent@1.7.1": {
+      "integrity": "sha512-9JmrhGZpOlEgOLdQgSm0zxFaYoQon408V1v49aqTWuXENVlnCuY9JBZcXZiCsZQWDjTm5Qf/nIvAy77mXDAjEg=="
+    },
+    "fast-check@4.5.3": {
+      "integrity": "sha512-IE9csY7lnhxBnA8g/WI5eg/hygA6MGWJMSNfFRrBlXUciADEhS1EDB0SIsMSvzubzIlOBbVITSsypCsW717poA==",
+      "dependencies": [
+        "pure-rand"
+      ]
+    },
     "mitata@1.0.34": {
       "integrity": "sha512-Mc3zrtNBKIMeHSCQ0XqRLo1vbdIx1wvFV9c8NJAiyho6AjNfMY8bVhbS12bwciUdd1t4rj8099CH3N3NFahaUA=="
+    },
+    "outdent@0.8.0": {
+      "integrity": "sha512-KiOAIsdpUTcAXuykya5fnVVT+/5uS0Q1mrkRHcF89tpieSmY33O/tmc54CqwA+bfhbtEfZUNLHaPUiB9X3jt1A=="
+    },
+    "pure-rand@7.0.1": {
+      "integrity": "sha512-oTUZM/NAZS8p7ANR3SHh30kXB+zK2r2BPcEn/awJIbOvq82WoMN4p62AWWp3Hhw50G0xMsw1mhIBLqHw64EcNQ=="
     }
   },
   "remote": {
