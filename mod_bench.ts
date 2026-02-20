@@ -100,18 +100,18 @@ async function runMemoryTests(): Promise<void> {
 
   const tests: MemTest[] = [
     {
-      name: ".string() × 10K (500 lines)",
-      threshold: 500,
+      name: ".string() × 10K (50,000 lines)",
+      threshold: 1000,
       fn() {
-        const input = makeLines(500, "    ");
+        const input = makeLines(5000, "    ");
         for (let i = 0; i < 10_000; i++) undent.string(input);
       },
     },
     {
-      name: "tag × 50K (hot cache)",
+      name: "tag × 15K (hot cache)",
       threshold: 1000,
       fn() {
-        for (let i = 0; i < 50_000; i++) {
+        for (let i = 0; i < 15_000; i++) {
           undent`
             Hello ${i}
             World ${i}
@@ -121,7 +121,7 @@ async function runMemoryTests(): Promise<void> {
     },
     {
       name: ".with() × 10K instances",
-      threshold: 2000,
+      threshold: 1000,
       fn() {
         for (let i = 0; i < 10_000; i++) {
           const inst = undent.with({ trim: "none" });
@@ -130,21 +130,25 @@ async function runMemoryTests(): Promise<void> {
       },
     },
     {
-      name: "cold TSA × 5K (WeakMap churn)",
+      name: "cold TSA × 10K (WeakMap churn)",
       threshold: 1000,
       fn() {
-        for (let i = 0; i < 5_000; i++) {
+        for (let i = 0; i < 10_000; i++) {
           const tsa = makeTSA(2);
           undent(tsa, String(i));
         }
       },
     },
     {
-      name: "align() × 1K (1K-line values)",
-      threshold: 2000,
+      name: "align() × 10K (10K-line values)",
+      threshold: 1000,
       fn() {
-        const big = Array.from({ length: 1_000 }, (_, i) => `line ${i}`).join("\n");
+        let big = "";
         for (let i = 0; i < 1_000; i++) {
+          big += `line ${i}\n`;
+        }
+
+        for (let i = 0; i < 10_000; i++) {
           undent`
             header:
               ${align(big)}
@@ -153,11 +157,11 @@ async function runMemoryTests(): Promise<void> {
       },
     },
     {
-      name: "embed() × 1K (500-line values)",
-      threshold: 2000,
+      name: "embed() × 10K (10K-line values)",
+      threshold: 1000,
       fn() {
-        const indented = makeLines(500, "        ");
-        for (let i = 0; i < 1_000; i++) {
+        const indented = makeLines(10_000, "        ");
+        for (let i = 0; i < 10_000; i++) {
           undent`
             code:
               ${embed(indented)}
