@@ -1,0 +1,10 @@
+{
+  "name": "@okikio/undent",
+  "version": "0.1.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "test": "deno test --trace-leaks --allow-hrtime --v8-flags=--expose-gc",
+    "bench": "deno bench --allow-env=NODE_DISABLE_COLORS --allow-hrtime --v8-flags=--expose-gc"
+  },
+  "license": "MIT"
+}
