@@ -1,0 +1,46 @@
+# Creates a draft GitHub Release after every push to main.
+#
+# What it does:
+#   - Checks whether the current commit's deno.json version is already
+#     tagged. If not, forge creates a draft release with:
+#       • the version from deno.json as the tag (e.g. undent@0.2.0)
+#       • the changelog entries since the last release
+#       • a link to the JSR documentation
+#   - If the version is already released, forge exits cleanly (no-op).
+#
+# You review and publish the draft release in the GitHub UI (or via
+# `gh release edit --draft=false`). Publishing it triggers the `publish`
+# workflow which pushes to JSR.
+#
+# Authentication:
+#   RELEASE_TOKEN must be a PAT with `contents: write`. The default
+#   GITHUB_TOKEN works for draft creation but won't trigger downstream
+#   workflows; a PAT avoids that limitation.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history + tags so forge can diff commits since the last
+          # release tag and generate an accurate changelog body.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: denoland/setup-deno@v2
+
+      - name: Create draft release
+        run: deno task forge release --draft --emoji
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

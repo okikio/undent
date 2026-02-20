@@ -1,0 +1,56 @@
+# Manually triggered version bump.
+#
+# What it does:
+#   1. Reads git history since the last release tag.
+#   2. Calculates the next semver from Conventional Commits.
+#   3. Updates `version` in deno.json and appends to CHANGELOG.md.
+#   4. Opens a pull request with those changes for review.
+#
+# After merging the bump PR, the `release` workflow creates a GitHub
+# draft release automatically.
+#
+# Authentication:
+#   The default GITHUB_TOKEN cannot trigger CI on new PRs and may be
+#   blocked from creating PRs by org policy. Set RELEASE_TOKEN to a
+#   Personal Access Token with `contents: write` + `pull-requests: write`.
+#   PRs will appear as created by the token's owner.
+name: Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Pre-release (omit --release flag)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history + tags so forge can walk all commits back to the
+          # last release and compute the correct version bump.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: denoland/setup-deno@v2
+
+      - name: Bump version
+        run: |
+          FLAGS="--pr --emoji"
+          # --release strips pre-release/build metadata (e.g. 1.2.3-pre.4 → 1.2.3).
+          # Omit it to produce a pre-release version instead.
+          if [ "${{ inputs.prerelease }}" != "true" ]; then
+            FLAGS="$FLAGS --release"
+          fi
+          deno task forge bump $FLAGS
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

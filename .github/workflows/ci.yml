@@ -1,0 +1,49 @@
+# Runs on every push and pull request to keep main green.
+#
+# Jobs:
+#   lint   — deno lint (static analysis, no false positives)
+#   fmt    — deno fmt --check (formatting gate; use `deno fmt` locally to fix)
+#   test   — full test suite with leak tracing + GC exposure
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - name: Lint
+        run: deno lint
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - name: Check formatting
+        run: deno fmt --check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - name: Run tests
+        run: deno task test
+
+  bench:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - name: Run benchmarks
+        run: deno task bench

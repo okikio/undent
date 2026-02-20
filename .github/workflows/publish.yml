@@ -1,16 +1,42 @@
+# Publishes to JSR when a GitHub Release is published.
+#
+# Flow:
+#   bump.yml  →  merge PR  →  release.yml creates draft  →
+#   you review & publish the draft  →  this workflow fires
+#
+# Authentication:
+#   Uses GitHub's OIDC token — no JSR secret needed. JSR exchanges the
+#   OIDC JWT for a short-lived publish token automatically, as long as
+#   the GitHub repo is linked in the JSR package settings.
+#
+#   Required JSR setup (one-time):
+#     jsr.io → @okikio/undent → Settings → GitHub Repository → link okikio/undent
+#
+# Safety:
+#   `deno publish` is idempotent — it exits cleanly if the version in
+#   deno.json is already published to JSR, so accidental re-runs are safe.
 name: Publish
+
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  # id-token: write is the only permission needed.
+  # JSR's OIDC flow mints a short-lived publish credential from this token;
+  # no secrets or API keys are stored in the repository.
+  id-token: write
+  contents: read
 
 jobs:
   publish:
+    name: Publish to JSR
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v6
-      - name: Publish package
-        run: npx jsr publish
+
+      - uses: denoland/setup-deno@v2
+
+      - name: Publish
+        run: deno publish
