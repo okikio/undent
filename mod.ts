@@ -1062,6 +1062,14 @@ function trimTrailingBlankLinesAll(text: string): number {
  *
  * Values wrapped by {@link align} or {@link embed} always get aligned.
  * When `alignAll` is true, unwrapped multi-line values are aligned too.
+ *
+ * Step by step:
+ * 1) Start with the first static segment.
+ * 2) For each interpolation, decide if alignment is required.
+ * 3) If wrapped, compute insertion pad from current output column and
+ *    reuse cached aligned output for repeated `(value, pad)` pairs.
+ * 4) If unwrapped + `alignAll`, align only when value is multi-line.
+ * 5) Append the next static segment and continue.
  */
 function joinAligned(
   strings: ReadonlyArray<string>,
