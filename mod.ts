@@ -718,8 +718,9 @@ function processStrings(strings: ReadonlyArray<string>, indentCount: number, opt
  * dedenting without the template tag machinery.
  *
  * Optimized two-pass approach: Pass 1 scans for minimum indent without
- * any array allocation. Pass 2 builds output parts directly and joins
- * once, avoiding the overhead of splitLines + modify + rejoinLines.
+ * any array allocation. Pass 2 uses a single regex replace (the same
+ * `(\r\n|\r|\n)[ \t]{0,N}` technique as the template pipeline) to
+ * strip indent, leveraging V8's C++ regex engine for speed.
  *
  * @param input - The string to dedent.
  * @param trimLeading - How to trim leading blank lines (default: "all").
@@ -750,6 +751,7 @@ export function dedentString(
       const c = input.charCodeAt(afterWs);
       if (c !== 0x0a && c !== 0x0d) {
         if (ws < minIndent) minIndent = ws;
+        if (minIndent === 0) break; // Can't go lower — skip remaining lines
       }
     }
     // Advance past rest of line + newline
@@ -763,95 +765,42 @@ export function dedentString(
     // If we didn't move past afterWs (last line, no newline), break
     if (pos === afterWs && afterWs >= len) break;
   }
-  if (minIndent === Infinity) minIndent = 0;
 
-  // ── Pass 2: build output parts ─────────────────────────────────
-  // Interleave line content and separator strings, then join once.
-  // This avoids creating separate lines/seps arrays and the rejoin loop.
-  const parts: string[] = [];
-  pos = 0;
-  while (pos < len) {
-    // Count leading whitespace
-    let ws = 0;
-    while (pos + ws < len) {
-      const c = input.charCodeAt(pos + ws);
+  // No content lines — input is all whitespace/newlines
+  if (minIndent === Infinity) {
+    if (trimLeading === "all" && trimTrailing === "all") return "";
+    minIndent = 0;
+  }
+
+  // ── Pass 2: strip indent via regex + trim ──────────────────────
+  // Uses the same regex approach as processStrings: a single
+  // (\r\n|\r|\n)[ \t]{0,N} replacement leverages V8's C++ regex engine.
+  // The first line's indent is handled separately via slice since the
+  // regex only matches indent after a newline.
+  let result = input;
+
+  if (minIndent > 0) {
+    // Strip first line's leading whitespace (up to minIndent chars)
+    let firstWs = 0;
+    while (firstWs < minIndent && firstWs < len) {
+      const c = input.charCodeAt(firstWs);
       if (c !== 0x20 && c !== 0x09) break;
-      ws++;
+      firstWs++;
     }
-    const afterWs = pos + ws;
-
-    // Find end of line (position of newline or end of string)
-    let eol = afterWs;
-    while (eol < len) {
-      const c = input.charCodeAt(eol);
-      if (c === 0x0a || c === 0x0d) break;
-      eol++;
-    }
-
-    // Push line content: blank lines → "", content lines → stripped
-    if (eol === afterWs) {
-      parts.push("");
-    } else {
-      // Strip at most minIndent whitespace characters
-      const stripCount = ws < minIndent ? ws : minIndent;
-      parts.push(input.slice(pos + stripCount, eol));
-    }
-
-    // Push separator if there's a newline
-    if (eol < len) {
-      const c = input.charCodeAt(eol);
-      if (c === 0x0d && eol + 1 < len && input.charCodeAt(eol + 1) === 0x0a) {
-        parts.push("\r\n");
-        pos = eol + 2;
-      } else {
-        parts.push(c === 0x0a ? "\n" : "\r");
-        pos = eol + 1;
-      }
-    } else {
-      break;
-    }
+    // Strip subsequent lines' indent with regex (matches processStrings)
+    const reStrip = new RegExp(`(\\r\\n|\\r|\\n)[ \\t]{0,${minIndent}}`, "g");
+    result = (firstWs > 0 ? input.slice(firstWs) : input).replace(reStrip, "$1");
   }
 
-  // If the string ended with a newline, there's an implicit empty line
-  // after it (same as splitLines produces lines.length = seps.length + 1).
-  if (parts.length > 0) {
-    const last = parts[parts.length - 1];
-    if (last === "\n" || last === "\r\n" || last === "\r") {
-      parts.push("");
-    }
-  }
-
-  // ── Trim leading/trailing blank lines ──────────────────────────
-  // parts is interleaved: [line, sep, line, sep, ..., line]
-  // Use index tracking instead of splice to avoid O(n²).
-  let startIdx = 0;
-  let endIdx = parts.length;
-
+  // Trim leading/trailing blank lines
   if (trimLeading !== "none") {
-    const limit = trimLeading === "one" ? 1 : Infinity;
-    let trimmed = 0;
-    // Each "line + sep" pair is 2 entries. A blank line has parts[startIdx] === "".
-    while (trimmed < limit && startIdx + 1 < endIdx && parts[startIdx] === "") {
-      startIdx += 2;
-      trimmed++;
-    }
+    result = result.replace(trimLeading === "all" ? LEADING_ALL : LEADING_ONE, "");
   }
-
   if (trimTrailing !== "none") {
-    const limit = trimTrailing === "one" ? 1 : Infinity;
-    let trimmed = 0;
-    // Last line is at endIdx-1. A blank trailing line has parts[endIdx-1] === "".
-    while (trimmed < limit && endIdx - 2 >= startIdx && parts[endIdx - 1] === "") {
-      endIdx -= 2;
-      trimmed++;
-    }
+    result = result.replace(trimTrailing === "all" ? TRAILING_ALL : TRAILING_ONE, "");
   }
 
-  // Join the relevant slice
-  if (startIdx === 0 && endIdx === parts.length) return parts.join("");
-  let out = "";
-  for (let i = startIdx; i < endIdx; i++) out += parts[i];
-  return out;
+  return result;
 }
 
 // ==========================================================================
