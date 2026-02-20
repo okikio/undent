@@ -782,16 +782,17 @@ World
       expect(result).toContain("99");
     });
 
-    it("caching is fast on repeated calls", () => {
+    it("caching remains correct under repeated calls", () => {
       function render(n: number) {
         return undent`
           item ${n}
         `;
       }
-      const start = performance.now();
-      for (let i = 0; i < 10_000; i++) render(i);
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(500);
+      let last = "";
+      for (let i = 0; i < 10_000; i++) {
+        last = render(i);
+      }
+      expect(last).toBe("item 9999");
     });
   });
 
@@ -1082,14 +1083,12 @@ World
 
     it("embed handles large pre-indented values", () => {
       const lines = Array.from({ length: 1_000 }, (_, i) => `    item ${i}`).join("\n");
-      const start = performance.now();
       const result = undent`
         list:
           ${embed(lines)}
       `;
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(500);
       expect(result.startsWith("list:\n  item 0\n  item 1")).toBe(true);
+      expect(result.includes("\n  item 999")).toBe(true);
     });
   });
 

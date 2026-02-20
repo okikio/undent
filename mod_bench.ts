@@ -4,8 +4,13 @@
  * Benchmarks for undent using mitata.
  *
  * Run:
- *   deno run -A bench.ts
- *   deno run -A --v8-flags=--expose-gc bench.ts   # more accurate GC metrics
+ *   deno bench --allow-env mod_bench.ts
+ *   bun run mod_bench.ts
+ *   node mod_bench.ts
+ *
+ * Optional (better memory-pressure signal):
+ *   deno bench --allow-env --v8-flags=--expose-gc mod_bench.ts
+ *   node --expose-gc mod_bench.ts
  *
  * Sections:
  *   1.  Competitor comparison — undent vs dedent vs outdent (apples-to-apples)
@@ -115,14 +120,42 @@ const LONG_LINE = "    " + "x".repeat(100_000);
 // 11. Memory pressure (runs first, before bench loop takes over)
 // =========================================================================
 
+function readHeapUsedBytes(): number | null {
+  const maybeDeno = globalThis as unknown as {
+    Deno?: { memoryUsage?: () => { heapUsed: number } };
+  };
+  if (typeof maybeDeno.Deno?.memoryUsage === "function") {
+    return maybeDeno.Deno.memoryUsage().heapUsed;
+  }
+
+  const maybeProcess = globalThis as unknown as {
+    process?: { memoryUsage?: () => { heapUsed: number } };
+  };
+  if (typeof maybeProcess.process?.memoryUsage === "function") {
+    return maybeProcess.process.memoryUsage().heapUsed;
+  }
+
+  return null;
+}
+
+function forceGCIfAvailable(): void {
+  const maybeGlobal = globalThis as unknown as { gc?: () => void };
+  if (typeof maybeGlobal.gc === "function") {
+    maybeGlobal.gc();
+    return;
+  }
+
+  const maybeBun = globalThis as unknown as { Bun?: { gc?: (force?: boolean) => void } };
+  if (typeof maybeBun.Bun?.gc === "function") {
+    maybeBun.Bun.gc(true);
+  }
+}
+
 function runMemoryTests(): void {
   const SEP = "─".repeat(64);
   console.log(`\n${SEP}`);
   console.log("  MEMORY PRESSURE TESTS");
   console.log(SEP);
-
-  const gc = (globalThis as unknown as { gc?: () => void }).gc;
-  const forceGC = () => { if (gc) gc(); };
 
   interface MemTest {
     name: string;
@@ -204,12 +237,24 @@ function runMemoryTests(): void {
   ];
 
   for (const t of tests) {
-    forceGC();
-    const before = Deno.memoryUsage();
+    forceGCIfAvailable();
+    const before = readHeapUsedBytes();
+
+    if (before === null) {
+      console.log(`  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`);
+      continue;
+    }
+
     t.fn();
-    forceGC();
-    const after = Deno.memoryUsage();
-    const delta = (after.heapUsed - before.heapUsed) / 1024;
+
+    forceGCIfAvailable();
+    const after = readHeapUsedBytes();
+    if (after === null) {
+      console.log(`  ⚠ ${t.name.padEnd(36)} heap Δ    n/a KB  (memory API unavailable)`);
+      continue;
+    }
+
+    const delta = (after - before) / 1024;
     const ok = delta < t.threshold;
     const icon = ok ? "✓" : "⚠";
     console.log(
@@ -220,9 +265,9 @@ function runMemoryTests(): void {
 
   console.log(SEP);
   console.log(
-    "  Note: V8 GC is non-deterministic. Deltas under ~1 MB after 10K+\n" +
-      "  iterations indicate no meaningful leak. Use --v8-flags=--expose-gc\n" +
-      "  for more accurate results.",
+    "  Note: GC and heap accounting are runtime-dependent and non-deterministic.\n" +
+      "  Deltas under ~1 MB after 10K+ iterations typically indicate no leak.\n" +
+      "  Enable explicit GC for best signal (Node: --expose-gc, Deno: --v8-flags=--expose-gc).",
   );
   console.log(`${SEP}\n`);
 }
@@ -547,6 +592,12 @@ summary(() => {
 
 // Separate cache-behavior benchmarks for embed/embed-like patterns.
 // These isolate repeated-input (hot) vs unique-input (cold) performance.
+//
+// Fairness notes:
+// - "hot" precompute group isolates template-join/cache behavior by moving
+//   embed-prep work out of the loop for all libraries.
+// - "hot" inline group includes embed-prep work inside the loop for all
+//   libraries, measuring end-to-end cost.
 summary(() => {
   bench("embed hot: undent ×100", () => {
     const v = embed(INDENTED_1K);
@@ -576,6 +627,44 @@ summary(() => {
     const v = embedLike(INDENTED_1K, npmOutdent.string, "        ");
     let last = "";
     for (let i = 0; i < 100; i++) {
+      last = npmOutdent`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+});
+
+summary(() => {
+  bench("embed hot inline: undent ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const v = embed(INDENTED_1K);
+      last = undent`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like hot inline: dedent ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const v = npmDedent(INDENTED_1K);
+      last = npmDedentAlign`
+        code:
+          ${v}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("embed-like hot inline: outdent ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      const v = embedLike(INDENTED_1K, npmOutdent.string, "        ");
       last = npmOutdent`
         code:
           ${v}
