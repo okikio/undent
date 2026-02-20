@@ -36,7 +36,7 @@ import undent, {
 
 // Competitors
 import npmDedent from "npm:dedent";
-import { outdent as npmOutdent }from "npm:outdent";
+import { outdent as npmOutdent } from "npm:outdent";
 
 // =========================================================================
 // Data generators
