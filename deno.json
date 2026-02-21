@@ -6,13 +6,9 @@
   "tasks": {
     "test": "deno test --trace-leaks --v8-flags=--expose-gc",
     "bench": "deno bench --allow-env=NODE_DISABLE_COLORS --v8-flags=--expose-gc",
-    // Shorthand for running forge without installing it globally.
-    // Used by bump.yml and release.yml workflows.
     "forge": "deno run -A jsr:@roka/forge"
   },
   "publish": {
-    // Only ship the public surface. Test and bench files are useful on
-    // JSR for doc-gen but are excluded to keep the package lean.
     "include": [
       "mod.ts",
       "changelog.md",
