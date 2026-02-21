@@ -1454,18 +1454,34 @@ function joinAligned(
  * producing trailing whitespace. Original newline sequences are
  * preserved.
  *
- * ```
- * alignText("a\nb\nc", "  ")   →  "a\n  b\n  c"
- * alignText("a\n\nc", "  ")    →  "a\n\n  c"     (blank line skipped)
- * alignText("a\r\nb\rc", "  ") →  "a\r\n  b\r  c"
- * ```
- *
  * Uses a character-level scanner instead of regex/split to minimize
  * allocations on large inputs.
  *
  * @param text - The multi-line string to align.
  * @param pad - A string (usually spaces) to prepend to lines 2+.
  * @returns The aligned string.
+ *
+ * @example Padding subsequent lines with a two-space prefix
+ * ```ts
+ * import { alignText } from "@okikio/undent";
+ *
+ * alignText("a\nb\nc", "  ");
+ * // "a\n  b\n  c"
+ *
+ * alignText("a\r\nb\rc", "  ");
+ * // "a\r\n  b\r  c"  — newline sequences preserved byte-for-byte
+ * ```
+ *
+ * @example Blank and whitespace-only lines are never padded
+ * ```ts
+ * import { alignText } from "@okikio/undent";
+ *
+ * alignText("a\n\nc", "  ");
+ * // "a\n\n  c"  — blank line in the middle is left unchanged
+ *
+ * alignText("a\n   \nc", "  ");
+ * // "a\n   \n  c"  — whitespace-only line is also left unchanged
+ * ```
  */
 export function alignText(text: string, pad: string): string {
   if (pad.length === 0 || text.length === 0) {
@@ -1733,6 +1749,16 @@ export function columnOffset(text: string): number {
  * @param text - The string to inspect.
  * @param i - The character index to check.
  * @returns `0`, `1`, or `2`.
+ *
+ * @example Detecting different newline sequence lengths
+ * ```ts
+ * import { newlineLengthAt } from "@okikio/undent";
+ *
+ * newlineLengthAt("a\nb", 1);   // 1  — plain LF
+ * newlineLengthAt("a\r\nb", 1); // 2  — CRLF pair counted as one sequence
+ * newlineLengthAt("a\rb", 1);   // 1  — bare CR
+ * newlineLengthAt("abc", 1);    // 0  — not a newline character
+ * ```
  */
 export function newlineLengthAt(text: string, i: number): 0 | 1 | 2 {
   const c = text.charCodeAt(i);
