@@ -189,40 +189,47 @@ export interface Undent {
 
   /**
    * Indent anchor symbol. Place as the first interpolation on its own
-   * line to lock the indent baseline to the content lines only.
+   * line to set an explicit left margin for the output.
    *
-   * By default, `undent` counts every line's leading whitespace —
-   * including the whitespace before each `${}` expression slot — when
-   * detecting the common indent. If an expression slot sits at a
-   * shallower column than the content, it pulls the minimum down and
-   * leaks extra whitespace into the output.
+   * The anchor's column position becomes the indent baseline. Content
+   * at the anchor's column becomes column 0 in the output; content
+   * deeper than the anchor keeps its relative spacing.
    *
-   * The anchor fixes this: it removes itself from detection, so only
-   * the actual content lines decide the baseline. Content keeps its
-   * relative structure (indentation between lines), while the shared
-   * source-code indent is stripped cleanly.
+   * This gives you explicit control over stripping instead of relying
+   * on automatic detection. It's especially useful in code generation
+   * where templates live deep inside nested classes or functions.
    *
-   * @example Code generation with preserved relative spacing
+   * @example Content at anchor column becomes column 0
    * ```ts
    * import { undent } from "@okikio/undent";
    *
-   * class ServiceGenerator {
+   * class Generator {
    *   emit(name: string) {
    *     return undent`
    *       ${undent.indent}
-   *         export class ${name}Service {
-   *           constructor() {}
-   *         }
+   *       export function ${name}() {
+   *         // implementation
+   *       }
    *     `;
-   *     // Output preserves relative spacing inside the class:
-   *     //
-   *     //   export class FooService {
-   *     //     constructor() {}      ← 2-space indent preserved
-   *     //   }
-   *     //
-   *     // Without the anchor, 2 stray spaces leak into every line
-   *     // because the expression slot's column contaminates detection.
+   *     // anchor and content at same column → output at column 0:
+   *     // "export function hello() {\n  // implementation\n}"
    *   }
+   * }
+   * ```
+   *
+   * @example Content deeper than anchor preserves relative spacing
+   * ```ts
+   * import { undent } from "@okikio/undent";
+   *
+   * function indentedOutput() {
+   *   return undent`
+   *     ${undent.indent}
+   *       if (ready) {
+   *         run();
+   *       }
+   *   `;
+   *   // Content is 2 deeper than anchor → 2-space indent preserved:
+   *   // "  if (ready) {\n    run();\n  }"
    * }
    * ```
    */
@@ -257,26 +264,26 @@ export interface ResolvedOptions {
  * Indent anchor symbol.
  *
  * Place `${undent.indent}` (or import this symbol directly) as the
- * first interpolation on its own line to lock the indent baseline to
- * the content lines. This prevents expression-slot whitespace from
- * contaminating indent detection.
+ * first interpolation on its own line to set the indent baseline.
+ * The anchor's column becomes column 0 for content at the same
+ * depth, and deeper content keeps its relative spacing.
  *
- * @example
+ * @example Using the indent symbol directly or via undent.indent
  * ```ts
  * import { undent, indent } from "@okikio/undent";
  *
  * // These are equivalent:
  * undent`
  *   ${undent.indent}
- *     export class Foo {
- *       bar = 1;
- *     }
+ *   export class Foo {
+ *     bar = 1;
+ *   }
  * `;
  * undent`
  *   ${indent}
- *     export class Foo {
- *       bar = 1;
- *     }
+ *   export class Foo {
+ *     bar = 1;
+ *   }
  * `;
  * // Both produce: "export class Foo {\n  bar = 1;\n}"
  * ```
@@ -358,7 +365,7 @@ interface InternalAlignedValue extends AlignedValue {
  * @param value - Any value. It is stringified with `String(value)`.
  * @returns A branded {@link AlignedValue} wrapper.
  *
- * @example
+ * @example Aligning a multi-line list at its insertion column
  * ```ts
  * import { undent, align } from "@okikio/undent";
  *
@@ -398,7 +405,7 @@ export function align(value: unknown): AlignedValue {
  * @param value - A string with baked-in indentation to strip.
  * @returns A branded {@link AlignedValue} wrapper.
  *
- * @example
+ * @example Embedding an indented SQL query into a template
  * ```ts
  * import { undent, embed } from "@okikio/undent";
  *
@@ -447,7 +454,7 @@ function dedentStringForEmbed(value: string): string {
  * Type guard: returns `true` if `value` was created by
  * {@link align} or {@link embed}.
  *
- * @example
+ * @example Checking whether a value is wrapped
  * ```ts
  * import { align, isAligned } from "@okikio/undent";
  *
@@ -492,7 +499,7 @@ export const DEFAULTS: ResolvedOptions = {
  * @param options - Configuration overrides. Omitted fields use defaults.
  * @returns A new {@link Undent} instance.
  *
- * @example
+ * @example Creating an outdent-compatible instance
  * ```ts
  * import { createUndent } from "@okikio/undent";
  *
@@ -516,7 +523,7 @@ export function createUndent(options: UndentOptions = {}): Undent {
  *
  * This is also the default export.
  *
- * @example
+ * @example Stripping structural indent from a template
  * ```ts
  * import { undent } from "@okikio/undent";
  *
@@ -544,7 +551,7 @@ export const dedent: Undent = undent;
  * Pre-configured instance that matches classic `outdent` npm behavior:
  * first-line indent detection and trim-one.
  *
- * @example
+ * @example First-line strategy with trim-one
  * ```ts
  * import { outdent } from "@okikio/undent";
  *
@@ -642,8 +649,9 @@ function undentTag(
   strings: TemplateStringsArray,
   ...values: unknown[]
 ): string {
-  const anchored = isAnchoredCall(state.tag, strings, values);
-  const segments = getProcessedSegments(state, strings, anchored);
+  const anchorCol = anchorColumn(state.tag, strings, values);
+  const anchored = anchorCol >= 0;
+  const segments = getProcessedSegments(state, strings, anchorCol);
   const effectiveValues = anchored ? values.slice(1) : values;
   const valLen = effectiveValues.length;
 
@@ -688,7 +696,7 @@ function undentTag(
  * @param options - User overrides to apply on top of `base`.
  * @returns A new {@link ResolvedOptions} with overrides merged in.
  *
- * @example
+ * @example Merging custom options with defaults
  * ```ts
  * import { resolveOptions, DEFAULTS } from "@okikio/undent";
  *
@@ -741,15 +749,18 @@ export function resolveOptions(
  * Retrieve processed segments from cache, or compute them.
  *
  * Pipeline:
- * 1. If anchored, drop strings[0] (consumed by the anchor marker).
- * 2. Detect indent level (common or first-line strategy).
+ * 1. If anchored, drop strings[0] (consumed by the anchor marker)
+ *    and use the anchor's column as the indent level.
+ * 2. Otherwise, detect indent level (common or first-line strategy).
  * 3. Strip indent, trim wrapper lines, normalize newlines.
  */
 function getProcessedSegments(
   state: UndentState,
   strings: TemplateStringsArray,
-  anchored: boolean,
+  anchorCol: number,
 ): string[] {
+  const anchored = anchorCol >= 0;
+
   let entry = state.cache.get(strings);
   if (!entry) {
     entry = {};
@@ -763,9 +774,14 @@ function getProcessedSegments(
     ? Array.prototype.slice.call(strings, 1) as string[]
     : strings;
 
-  const indentCount = state.opts.strategy === "first"
-    ? detectFirstIndent(effectiveStrings)
-    : detectCommonIndent(effectiveStrings);
+  // When anchored, the anchor's column IS the indent level — content
+  // keeps its spacing relative to the anchor. When not anchored, we
+  // auto-detect the minimum indent from the content itself.
+  const indentCount = anchored
+    ? anchorCol
+    : state.opts.strategy === "first"
+      ? detectFirstIndent(effectiveStrings)
+      : detectCommonIndent(effectiveStrings);
 
   const processed = processStrings(effectiveStrings, indentCount, state.opts);
 
@@ -776,12 +792,14 @@ function getProcessedSegments(
 }
 
 /**
- * Detect whether this is an "anchored" call.
+ * Detect whether this is an anchored call and return the anchor's
+ * column position. Returns -1 if not anchored.
  *
  * An anchored call uses the indent symbol (or the tag itself, for
  * outdent backward compat) as the first interpolation, placed alone
- * on its own line. This overrides automatic indent detection and uses
- * the anchor line's indentation as the zero-column reference.
+ * on its own line. The anchor's column — whitespace after the last
+ * newline in strings[0] — becomes the indent baseline. Content keeps
+ * its spacing relative to that column.
  *
  * Five conditions must all hold:
  * 1. At least one interpolated value exists.
@@ -791,34 +809,43 @@ function getProcessedSegments(
  * 5. strings[1] starts with a newline or is empty (the marker is on
  *    its own line, not `text ${indent} more text`).
  */
-function isAnchoredCall(
+function anchorColumn(
   tag: Undent | null,
   strings: TemplateStringsArray,
   values: ReadonlyArray<unknown>,
-): boolean {
-  if (!tag || values.length === 0) return false;
+): number {
+  if (!tag || values.length === 0) return -1;
 
   const v0 = values[0];
-  if (v0 !== indent && v0 !== tag) return false;
+  if (v0 !== indent && v0 !== tag) return -1;
 
   const s0 = strings[0];
   let hasNl = false;
+  let colAfterLastNl = 0;
   for (let i = 0; i < s0.length; i++) {
     const c = s0.charCodeAt(i);
     if (c === CC_LF || c === CC_CR) {
       hasNl = true;
+      colAfterLastNl = 0;
+      // Skip \n in \r\n so it counts as one newline.
+      if (c === CC_CR && i + 1 < s0.length && s0.charCodeAt(i + 1) === CC_LF) {
+        i++;
+      }
       continue;
     }
-    if (c === CC_SPACE || c === CC_TAB) continue;
-    return false; // non-whitespace content before marker
+    if (c === CC_SPACE || c === CC_TAB) {
+      colAfterLastNl++;
+      continue;
+    }
+    return -1; // non-whitespace content before marker
   }
-  if (!hasNl) return false;
+  if (!hasNl) return -1;
 
-  if (strings.length < 2) return false;
+  if (strings.length < 2) return -1;
   const s1 = strings[1];
-  if (s1.length === 0) return true;
+  if (s1.length === 0) return colAfterLastNl;
   const c0 = s1.charCodeAt(0);
-  return c0 === CC_LF || c0 === CC_CR;
+  return (c0 === CC_LF || c0 === CC_CR) ? colAfterLastNl : -1;
 }
 
 // --- Indent detection ----------------------------------------------------
@@ -1133,7 +1160,7 @@ function processStrings(
  * @param trimTrailing - How to handle trailing blank lines.
  * @returns The dedented string.
  *
- * @example
+ * @example Stripping indent from a SQL string
  * ```ts
  * import { dedentString } from "@okikio/undent";
  *
@@ -1562,7 +1589,7 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
  * @param text - The string to split.
  * @returns An object with `lines` and `seps` arrays.
  *
- * @example
+ * @example Splitting a string while preserving newline sequences
  * ```ts
  * import { splitLines } from "@okikio/undent";
  *
@@ -1627,7 +1654,7 @@ export function splitLines(text: string): { lines: string[]; seps: string[] } {
  * @param seps - The newline separators between lines.
  * @returns The reconstructed string.
  *
- * @example
+ * @example Round-tripping through split and rejoin
  * ```ts
  * import { splitLines, rejoinLines } from "@okikio/undent";
  *
@@ -1668,7 +1695,7 @@ export function rejoinLines(
  * @returns The number of characters after the final newline, or the
  *   full string length if there are no newlines.
  *
- * @example
+ * @example Measuring the insertion column
  * ```ts
  * import { columnOffset } from "@okikio/undent";
  *
