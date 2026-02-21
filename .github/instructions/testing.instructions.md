@@ -30,8 +30,8 @@ control in property-based tests.
 ## Core principle: test behavior, not implementation
 
 Treat the module as a black box. Call the public API, assert on the output.
-Never assert on internal state, private methods, or implementation details.
-A refactor that preserves observable behavior must not break any test.
+Never assert on internal state, private methods, or implementation details. A
+refactor that preserves observable behavior must not break any test.
 
 ## Test independence and determinism
 
@@ -141,8 +141,8 @@ expect(results.every((r) => r.endsWith(" suffix"))).toBe(true);
 ## Oracle / compatibility tests
 
 Don't only test against documented behavior samples. Run `npm:dedent` and
-`npm:outdent` on the same randomly generated inputs and assert equivalent
-output for the common behavioral subset:
+`npm:outdent` on the same randomly generated inputs and assert equivalent output
+for the common behavioral subset:
 
 ```ts
 import npmDedent from "npm:dedent";
@@ -160,9 +160,9 @@ This catches behavioral regressions that hand-crafted examples miss.
 
 ## Boundary value tests
 
-For any feature with an "N lines" threshold, always test N = 0, 1, 2, and 3.
-The `trim` option is the prime example — test 0, 1, and 2 blank lines at each
-edge to catch off-by-one mutations:
+For any feature with an "N lines" threshold, always test N = 0, 1, 2, and 3. The
+`trim` option is the prime example — test 0, 1, and 2 blank lines at each edge
+to catch off-by-one mutations:
 
 ```ts
 const trimAll = undent.with({ trim: "all" });
@@ -197,8 +197,8 @@ These are often missed but expose real bugs:
   would be more robust. Prefer `assertStringIncludes`, line-count checks, or
   prefix/suffix assertions when exact output isn't what matters.
 - **Mutation-blind assertions**: a test that runs a code path but never checks
-  the return value provides false safety. Every `act` step must have an
-  `assert` step that would fail if the output changed.
+  the return value provides false safety. Every `act` step must have an `assert`
+  step that would fail if the output changed.
 - **Over-abstraction in test helpers**: a helper that builds expected values
   programmatically using the same logic as the implementation is testing
   nothing. Expected values should be literals written by a human.

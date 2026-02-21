@@ -34,8 +34,8 @@ Use a `!` after the type/scope to mark breaking changes:
    "Removes".
 5. Separate from the body with a blank line.
 
-**Imperative mood test:** "If applied, this commit will [subject line]."
-Both of these must pass that test:
+**Imperative mood test:** "If applied, this commit will [subject line]." Both of
+these must pass that test:
 
 ```
 # Good
@@ -62,8 +62,8 @@ fix(cache): prevent stale results when the same template is reused
 ### Body rules
 
 - Wrap at 72 characters.
-- Explain **why** the change exists, not what the diff contains (the diff
-  shows what changed).
+- Explain **why** the change exists, not what the diff contains (the diff shows
+  what changed).
 - Apply the "5 Whys" rule: if the reason is "it was broken", go one level
   deeper. Why was it broken? What assumption failed?
 - Include migration guidance when there is a behavior change.
@@ -74,9 +74,9 @@ fix(cache): prevent stale results when the same template is reused
 
 ### Atomic commits
 
-One logical change per commit. If you are fixing a bug and refactoring
-unrelated code, split them. A commit that cannot be summarized in 50
-characters is probably doing too much.
+One logical change per commit. If you are fixing a bug and refactoring unrelated
+code, split them. A commit that cannot be summarized in 50 characters is
+probably doing too much.
 
 When contributing a feature via a pull request, prefer squash-merging with a
 single well-crafted conventional commit message that represents the changelog
@@ -137,8 +137,8 @@ symptom and the result of the fix, not the implementation mechanism.
 - Fix `dedentString` hanging on strings with mixed `\r\n` and `\r` line endings
 ```
 
-Connect changes to broader context when useful. When fixing a long-standing
-bug, link to the original issue. For new features, link to the documentation.
+Connect changes to broader context when useful. When fixing a long-standing bug,
+link to the original issue. For new features, link to the documentation.
 
 ### Calling out breaking changes
 
@@ -148,15 +148,15 @@ breaks and what the migration path is:
 ```md
 ### Changed
 
-- **Breaking:** `align()` no longer trims trailing whitespace from padded
-  lines. Callers that relied on the implicit trim must call `.trimEnd()` on
-  the result explicitly.
+- **Breaking:** `align()` no longer trims trailing whitespace from padded lines.
+  Callers that relied on the implicit trim must call `.trimEnd()` on the result
+  explicitly.
 ```
 
 ### The deprecation contract
 
-Deprecations should be visible across at least one version before removal.
-The changelog must make the path explicit:
+Deprecations should be visible across at least one version before removal. The
+changelog must make the path explicit:
 
 ```md
 ## [0.9.0] — deprecates X
@@ -180,8 +180,8 @@ explicitly in the changelog rather than deleting the entry:
 ```md
 ## [0.8.1] — 2025-01-15 [YANKED]
 
-Yanked due to a regression in `dedentString` that corrupted `\r\n` line
-endings. Use 0.8.2 instead.
+Yanked due to a regression in `dedentString` that corrupted `\r\n` line endings.
+Use 0.8.2 instead.
 ```
 
 ### Pre-release checklist
@@ -189,13 +189,13 @@ endings. Use 0.8.2 instead.
 Before tagging a release:
 
 1. Rename `[Unreleased]` to the new version with today's date.
-2. Read every generated entry. Ask: "would a new user of this package
-   understand what changed and why?"
+2. Read every generated entry. Ask: "would a new user of this package understand
+   what changed and why?"
 3. Group related entries and add context where the commit subject alone is
    insufficient.
 4. Diff the full commit log against the generated entries. Check whether any
-   `chore`, `refactor`, or `perf` commits actually had user-visible effects
-   that were miscategorized (changed API timing, dropped support for something,
+   `chore`, `refactor`, or `perf` commits actually had user-visible effects that
+   were miscategorized (changed API timing, dropped support for something,
    altered output format). If so, add them manually.
 5. Verify breaking changes are prominent and include a migration path.
 6. Verify the narrative reads as a coherent story of deliberate work, not a

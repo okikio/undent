@@ -55,9 +55,12 @@ applyTo: "**/*.ts,**/*.tsx"
 
 For every exported function, interface, type alias, and constant:
 
-- Write TSDoc in plain English — explain *why* it exists, not just *what* it is. Ground the reasoning in the problem being solved, the approach taken, and the assumptions/edge cases.
-- Every `@example` block must have a descriptive name that clarifies the scenario and behaviour being demonstrated:
-  ```ts
+- Write TSDoc in plain English — explain _why_ it exists, not just _what_ it is.
+  Ground the reasoning in the problem being solved, the approach taken, and the
+  assumptions/edge cases.
+- Every `@example` block must have a descriptive name that clarifies the
+  scenario and behaviour being demonstrated:
+  ````ts
   // bad — fails deno doc --lint
   * @example
   * ```ts
@@ -69,7 +72,7 @@ For every exported function, interface, type alias, and constant:
   * ```ts
   * align("hello");
   * ```
-  ```
+  ````
 - Include at least two examples for non-trivial APIs:
   - Example A: common path
   - Example B: edge case or configuration variant
@@ -79,9 +82,12 @@ For every exported function, interface, type alias, and constant:
 
 For complex logic, include:
 
-- a docstring summarizing intent, problem, reasoning & logic, purpose + assumptions,
-- a step-by-step algorithm explanation (with a walkthrough of the example inputs/outputs),
-- make clear what abstract technical codes mean, e.g. binary represents character "C" or keycode represents "Enter", etc...,
+- a docstring summarizing intent, problem, reasoning & logic, purpose +
+  assumptions,
+- a step-by-step algorithm explanation (with a walkthrough of the example
+  inputs/outputs),
+- make clear what abstract technical codes mean, e.g. binary represents
+  character "C" or keycode represents "Enter", etc...,
 - an ASCII diagram if it improves comprehension.
 
 ### Validate with deno doc
