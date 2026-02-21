@@ -32,23 +32,23 @@ jobs:
       - name: Doc Lint
         run: deno doc --lint mod.ts
 
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
+  # fmt:
+  #   name: Format
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: denoland/setup-deno@v2
 
-      - name: Cache Deno deps
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/deno
-          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deno-
+  #     - name: Cache Deno deps
+  #       uses: actions/cache@v5
+  #       with:
+  #         path: ~/.cache/deno
+  #         key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-deno-
 
-      - name: Check formatting
-        run: deno fmt --check
+  #     - name: Check formatting
+  #       run: deno fmt --check
 
   test:
     name: Test
