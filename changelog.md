@@ -24,7 +24,7 @@ from [Conventional Commits](https://www.conventionalcommits.org/).
   single before/after snapshot, catching leaks that one-time initialisation
   overhead (JIT compilation, WeakMap warming) would previously mask.
 
-## [0.1.0] - 2026-02-20
+## undent@0.1.0
 
 Initial release.
 
@@ -55,5 +55,3 @@ Initial release.
   custom pipelines.
 - **Caching** — per-call-site segment cache for zero-cost repeated calls.
   Bounded caches for `embed()` and alignment memoization.
-
-[0.1.0]: https://github.com/okikio/undent/releases/tag/undent%400.1.0
