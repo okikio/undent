@@ -126,7 +126,9 @@ console.log(JSON.stringify(undent.with({ trim: "one" })`
 // "hello"
 
 // per-side: keep leading blank, strip trailing
-console.log(JSON.stringify(undent.with({ trim: { leading: "none", trailing: "all" } })`
+console.log(
+  JSON.stringify(undent.with({ trim: { leading: "none", trailing: "all" } })`
   hello
-`));
+`),
+);
 // "\nhello"
