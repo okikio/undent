@@ -51,12 +51,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Configure git identity
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-
       - name: Delete stale bump branch
+        # forge force-pushes when an open PR exists, but fails if the remote
+        # branch is orphaned (PR closed/merged without branch cleanup).
         run: git push origin --delete automated/bump-undent || true
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -72,3 +69,7 @@ jobs:
           deno task forge bump $FLAGS
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # forge reads GIT_NAME/GIT_EMAIL and sets them via git config
+          # on the bump branch before committing — no separate git config step needed.
+          GIT_NAME: "github-actions[bot]"
+          GIT_EMAIL: "github-actions[bot]@users.noreply.github.com"
