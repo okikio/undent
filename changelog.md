@@ -1,3 +1,7 @@
+## undent@0.2.0
+
+- ✨ add memory regression tests to prevent leaks
+
 # Changelog
 
 All notable changes to [`@okikio/undent`](https://jsr.io/@okikio/undent) are

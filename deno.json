@@ -1,6 +1,6 @@
 {
   "name": "@okikio/undent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "exports": "./mod.ts",
   "tasks": {
     "test": "deno test --trace-leaks --v8-flags=--expose-gc",
