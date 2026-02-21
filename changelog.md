@@ -1,10 +1,16 @@
 ## undent@0.2.1
 
-- 🐛 clarify output indentation issue in examples
-- 🐛 correct output indentation in examples
-- 🐛 add examples for core undent functionality and trim modes
-- 🐛 limit regex cache size to prevent unbounded growth
-- 🐛 revert Node.js version to 25 in publish workflow
+### Fixed
+
+- Regex cache now has a bounded size, preventing unbounded memory growth in
+  long-running processes that process many distinct strings.
+
+### Docs
+
+- Corrected output comments in README examples for `undent`, `align()`, and
+  trim modes — several expected outputs were wrong or incomplete.
+- Added before/after examples for core indent stripping and trim modes to make
+  the behavior immediately clear without reading prose.
 
 # Changelog
 
