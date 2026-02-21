@@ -1044,7 +1044,13 @@ const TRAILING_ALL = /(?:(?:\r\n|\r|\n)[ \t]*)+$/;
  * Why: compiling `new RegExp(...)` on every `.string()`/tag call adds
  * avoidable overhead on hot paths. The pattern is deterministic for a
  * given indent width, so we compile once and reuse.
+ *
+ * Bounded at 128 entries. Real-world indent widths cluster around 2–8,
+ * so the cap is rarely reached. Without a bound, adversarially varied
+ * indent widths (e.g. server-rendered user-supplied code blocks) could
+ * grow the cache without limit.
  */
+const STRIP_REGEX_CACHE_MAX = 128;
 const STRIP_REGEX_CACHE = new Map<number, RegExp>();
 
 /**
@@ -1060,6 +1066,10 @@ function getStripIndentRegex(indentCount: number): RegExp {
   let re = STRIP_REGEX_CACHE.get(indentCount);
   if (!re) {
     re = new RegExp(`(\\r\\n|\\r|\\n)[ \\t]{0,${indentCount}}`, "g");
+    if (STRIP_REGEX_CACHE.size >= STRIP_REGEX_CACHE_MAX) {
+      const oldest = STRIP_REGEX_CACHE.keys().next().value;
+      if (oldest !== undefined) STRIP_REGEX_CACHE.delete(oldest);
+    }
     STRIP_REGEX_CACHE.set(indentCount, re);
   }
   return re;
