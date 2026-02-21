@@ -21,7 +21,7 @@ function greet(name: string) {
 console.log(greet("Ayo"));
 ```
 
-Output — 4 unwanted leading spaces, blank lines at both ends:
+The output looks weird because of the leading spaces:
 
 ```
 
@@ -30,7 +30,20 @@ Output — 4 unwanted leading spaces, blank lines at both ends:
 
 ```
 
-You could smash the template to column 0, but then your source becomes unreadable. 
+You could smash the template to column 0, but then your code becomes unreadable. 
+
+```ts
+function greet(name: string) {
+  return `
+Hello, ${name}!
+Welcome aboard.
+  `;
+}
+
+console.log(greet("Ayo"));
+```
+
+> TL;DR: it looks kinda ugly...plus it messes up code folding in some editors.
 
 `undent` fixes this issues by letting you write nicely indented templates without the extra spaces in the output:
 
@@ -45,8 +58,6 @@ function greet(name: string) {
 }
 
 console.log(greet("Ayo"));
-// Hello, Ayo!
-// Welcome aboard.
 ```
 
 ```
