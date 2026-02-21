@@ -19,15 +19,15 @@ applyTo: "**"
 
 **Syntax rules — every commit must satisfy all of these:**
 
-| Rule | Correct | Wrong |
-|---|---|---|
-| Type is lowercase | `fix:` | `Fix:`, `FIX:` |
-| Single space after colon | `fix: avoid` | `fix:avoid`, `fix:  avoid` |
-| No period at end of subject | `fix: avoid crash` | `fix: avoid crash.` |
-| Subject capitalised | `feat: Add align()` | `feat: add align()` |
-| Blank line between subject and body | _(blank line)_ | body immediately after subject |
-| No trailing whitespace | — | lines ending with spaces |
-| No emoji in subject | `feat: add embed()` | `✨ feat: add embed()` |
+| Rule                                | Correct             | Wrong                          |
+| ----------------------------------- | ------------------- | ------------------------------ |
+| Type is lowercase                   | `fix:`              | `Fix:`, `FIX:`                 |
+| Single space after colon            | `fix: avoid`        | `fix:avoid`, `fix:  avoid`     |
+| No period at end of subject         | `fix: avoid crash`  | `fix: avoid crash.`            |
+| Subject capitalised                 | `feat: Add align()` | `feat: add align()`            |
+| Blank line between subject and body | _(blank line)_      | body immediately after subject |
+| No trailing whitespace              | —                   | lines ending with spaces       |
+| No emoji in subject                 | `feat: add embed()` | `✨ feat: add embed()`         |
 
 **Types that appear in the changelog:** `feat`, `fix`
 
@@ -97,8 +97,8 @@ fix: prevent double-stripping on nested undent calls
 ```
 
 **Ticket / PR numbers in the subject** — numbers in the subject become the
-changelog entry, and a number is meaningless without the tracker open in
-another tab. Put references in the body or footer.
+changelog entry, and a number is meaningless without the tracker open in another
+tab. Put references in the body or footer.
 
 ```
 # Bad — changelog reads as "fix #442"
@@ -150,11 +150,11 @@ fix: handle bare \r in splitLines
 feat: add embed helper for pre-indented values
 ```
 
-**`feat` for infrastructure additions** — `feat` means a user-visible API
-change and triggers a minor version bump. Build scripts, publish workflows,
-and developer tooling are infrastructure; package consumers never see them.
-Using `feat` here bumps the version for a change users cannot observe and adds
-a misleading "Features" entry to the changelog.
+**`feat` for infrastructure additions** — `feat` means a user-visible API change
+and triggers a minor version bump. Build scripts, publish workflows, and
+developer tooling are infrastructure; package consumers never see them. Using
+`feat` here bumps the version for a change users cannot observe and adds a
+misleading "Features" entry to the changelog.
 
 ```
 # Bad — no user-visible API changed; wrongly bumps minor version
@@ -175,9 +175,9 @@ Ask these questions in order:
 1. **Does it change what a _consumer_ of the package can do?** → `feat` — New
    export, new option, new runtime behavior that didn't exist before. The test:
    would a user need to update their own code to take advantage of it?
-   **Infrastructure additions (build scripts, CI workflows, publish tooling)
-   are never `feat`** even if they are new — they are not part of the public
-   API surface.
+   **Infrastructure additions (build scripts, CI workflows, publish tooling) are
+   never `feat`** even if they are new — they are not part of the public API
+   surface.
 
 2. **Does it fix something broken?** → `fix` — Observable bug: wrong output,
    crash, incorrect coercion, bad edge case.
@@ -329,9 +329,9 @@ What you can and should do manually:
 5. Create the GitHub release:
    `GITHUB_TOKEN=$(gh auth token) deno task forge release`
 6. Publishing is automated — pushing a GitHub Release triggers `publish.yml`,
-   which publishes to **JSR** (`deno publish`) and **npm** (`deno task build:npm`
-   followed by `npm publish`) in parallel jobs. Both are idempotent; re-running
-   the workflow for an already-published version is safe.
+   which publishes to **JSR** (`deno publish`) and **npm**
+   (`deno task build:npm` followed by `npm publish`) in parallel jobs. Both are
+   idempotent; re-running the workflow for an already-published version is safe.
 
    To publish manually:
    - JSR: `deno publish`
