@@ -1,7 +1,3 @@
-## undent@0.2.0
-
-- ✨ add memory regression tests to prevent leaks
-
 # Changelog
 
 All notable changes to [`@okikio/undent`](https://jsr.io/@okikio/undent) are
@@ -11,6 +7,10 @@ entries are managed automatically by [`@roka/forge`](https://jsr.io/@roka/forge)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
 <!-- forge appends new entries above this line -->
+
+## undent@0.2.0
+
+- ✨ add memory regression tests to prevent leaks
 
 ## [0.1.0] - 2026-02-20
 
