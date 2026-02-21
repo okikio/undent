@@ -13,11 +13,10 @@ from [Conventional Commits](https://www.conventionalcommits.org/).
 ### Added
 
 - Package is now published to **npm** as
-  [`@okikio/undent`](https://www.npmjs.com/package/@okikio/undent).
-  Node.js and Bun users can install directly with `npm install @okikio/undent`
-  in addition to the existing `npx jsr add @okikio/undent` path. The package
-  ships both CJS (`require`) and ESM (`import`) builds with full TypeScript
-  declarations.
+  [`@okikio/undent`](https://www.npmjs.com/package/@okikio/undent). Node.js and
+  Bun users can install directly with `npm install @okikio/undent` in addition
+  to the existing `npx jsr add @okikio/undent` path. The package ships both CJS
+  (`require`) and ESM (`import`) builds with full TypeScript declarations.
 
 ### Changed
 
