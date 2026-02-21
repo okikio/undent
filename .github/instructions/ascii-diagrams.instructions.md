@@ -4,7 +4,8 @@ applyTo: "**/*.ts,**/*.md"
 
 # ASCII Diagrams
 
-Use ASCII diagrams to make complex systems, data flows, and algorithms visually understandable. Diagrams should clarify—not decorate.
+Use ASCII diagrams to make complex systems, data flows, and algorithms visually
+understandable. Diagrams should clarify—not decorate.
 
 ## When to Use
 
@@ -17,7 +18,8 @@ Use ASCII diagrams to make complex systems, data flows, and algorithms visually 
 
 ## Style
 
-Keep diagrams simple and readable in monospace fonts. Use box-drawing characters for clean lines:
+Keep diagrams simple and readable in monospace fonts. Use box-drawing characters
+for clean lines:
 
 ```
 ┌──────┐  ─  │  ┐  └  ┘  ├  ┤  ┬  ┴  ┼
@@ -36,6 +38,7 @@ Or stick with ASCII when portability matters:
 ## Examples
 
 **Data flow:**
+
 ```
 Request
    │
@@ -51,30 +54,32 @@ Request
 ```
 
 **State machine:**
+
 ```
-           start
-              │
-              ▼
-         ┌────────┐
-    ┌───▶│  Idle  │◀──────┐
-    │    └────────┘       │
-    │         │           │
-    │    submit()      cancel()
-    │         │           │
-    │         ▼           │
-    │    ┌────────┐       │
- done()  │Loading │───────┤
-    │    └────────┘       │
-    │         │        error()
-    │      success        │
-    │         │           │
-    │         ▼           ▼
-    │    ┌────────┐  ┌────────┐
-    └────│Success │  │ Error  │
-         └────────┘  └────────┘
+          start
+             │
+             ▼
+        ┌────────┐
+   ┌───▶│  Idle  │◀──────┐
+   │    └────────┘       │
+   │         │           │
+   │    submit()      cancel()
+   │         │           │
+   │         ▼           │
+   │    ┌────────┐       │
+done()  │Loading │───────┤
+   │    └────────┘       │
+   │         │        error()
+   │      success        │
+   │         │           │
+   │         ▼           ▼
+   │    ┌────────┐  ┌────────┐
+   └────│Success │  │ Error  │
+        └────────┘  └────────┘
 ```
 
 **Binary layout:**
+
 ```
 Byte:    0       1       2       3
        ┌───────┬───────┬───────────────┐
@@ -91,6 +96,7 @@ Flags breakdown:
 ```
 
 **Tree/hierarchy:**
+
 ```
 root/
 ├── core/
@@ -106,6 +112,7 @@ root/
 ```
 
 **Algorithm steps:**
+
 ```
 Input: [3, 1, 4, 1, 5, 9, 2, 6]
 
@@ -131,8 +138,10 @@ Step 6: Final merge
 ## Placement
 
 Put diagrams in:
+
 - TSDoc comments above functions/classes
 - README sections explaining architecture
 - Inline comments for complex algorithms
 
-Always accompany diagrams with prose that explains what the reader is looking at.
+Always accompany diagrams with prose that explains what the reader is looking
+at.

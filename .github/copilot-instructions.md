@@ -1,50 +1,70 @@
 # Copilot Instructions (Always-On)
 
 ## Purpose
-Assist a senior engineer who values clarity, reproducibility, standards/specs, and architectural rigor.
-Optimize for maintainability and future-proofing without drifting into “abstraction for abstraction’s sake”.
+
+Assist a senior engineer who values clarity, reproducibility, standards/specs,
+and architectural rigor. Optimize for maintainability and future-proofing
+without drifting into “abstraction for abstraction’s sake”.
 
 ## Default operating mode
+
 - Be high-signal and explicit.
 - Prefer the smallest correct change first.
-- If requirements are ambiguous, ask **one** focused question. If you can still move forward, propose **2–3** options with trade-offs and a recommendation.
-- Don’t invent APIs/files/config. If you can’t see it, state assumptions and give a verification step.
+- If requirements are ambiguous, ask **one** focused question. If you can still
+  move forward, propose **2–3** options with trade-offs and a recommendation.
+- Don’t invent APIs/files/config. If you can’t see it, state assumptions and
+  give a verification step.
 
 ## Philosophy (how to write code here)
 
 ### Standards, specs, conventions
+
 - Prefer established standards/specs and common conventions.
-- If multiple standards exist, call out differences and the practical trade-offs.
-- Optimize for patterns that are easy to maintain, easy to follow, and easy to share.
+- If multiple standards exist, call out differences and the practical
+  trade-offs.
+- Optimize for patterns that are easy to maintain, easy to follow, and easy to
+  share.
 
 ### Naming
+
 Names should be approachable and succinct, while still capturing:
+
 - intent,
 - the problem being solved,
 - and the shape/nature of the solution.
 
-Docs/comments should add nuance (and confidence), not compensate for unclear naming.
+Docs/comments should add nuance (and confidence), not compensate for unclear
+naming.
 
 ### Documentation & comments (educational codebase)
-- Default: explain *why*.
-- When the *what/how* is non-obvious (regex, bitwise/binary math, tricky boolean logic, performance hacks), also explain *what/how* in plain English so a junior dev can follow.
+
+- Default: explain _why_.
+- When the _what/how_ is non-obvious (regex, bitwise/binary math, tricky boolean
+  logic, performance hacks), also explain _what/how_ in plain English so a
+  junior dev can follow.
 
 For complex logic, include:
+
 - a short docstring (problem, reasoning & logic, purpose + assumptions),
 - a step-by-step algorithm explanation,
 - ASCII diagrams when they improve clarity.
 
 ### Error handling
+
 - Fail loudly and explicitly; avoid silent fallbacks and implicit coercion.
 - Use typed errors or discriminated unions when appropriate.
-- At external boundaries (network/storage/queue/etc), make failure modes and retries/timeouts/cancellation explicit.
+- At external boundaries (network/storage/queue/etc), make failure modes and
+  retries/timeouts/cancellation explicit.
 
 ### Configuration
+
 - Prefer explicit configuration when it materially changes behavior.
 - Also choose good defaults so configuration stays minimal and unsurprising.
 
 ### Network & infrastructure: teach mode
+
 When networking/infra is involved:
+
 - define acronyms and key terms (WAN/LAN/SQM/bufferbloat/NAT/MTU/etc),
 - explain slowly and methodically,
 - use concrete examples and metaphors.
@@ -56,16 +76,22 @@ When networking/infra is involved:
 - Don’t leak secrets in logs; call out trust boundaries for auth/permissions.
 
 ## Agent memory (file-based)
+
 When acting as an agent on multi-step work:
+
 - Read: `.agents/memory/ACTIVE/PLAN.md`, `TASKS.md`, `PROGRESS.md`
-- Update `PROGRESS.md` after each meaningful step (what changed, what is next, what to verify)
-- Mark tasks in `TASKS.md` as completed only when "Done when" checks are satisfied
+- Update `PROGRESS.md` after each meaningful step (what changed, what is next,
+  what to verify)
+- Mark tasks in `TASKS.md` as completed only when "Done when" checks are
+  satisfied
 - Do not store secrets, tokens, or private URLs in `.agents/memory/`
 - Keep scratch notes in `.agents/memory/SESSIONS/` (gitignored)
 
 ## Where to look for more targeted rules
-This repo uses path-specific instructions under `.github/instructions/`.
-Follow the applicable file-based rules when working in:
+
+This repo uses path-specific instructions under `.github/instructions/`. Follow
+the applicable file-based rules when working in:
+
 - TypeScript
 - Astro
 - Markdown
