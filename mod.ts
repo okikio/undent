@@ -1,5 +1,5 @@
 /**
- * @module undent
+ * # @okikio/undent
  *
  * Strip source-code indentation from template literals and strings.
  *
@@ -40,6 +40,8 @@
  * removed, newlines in interpolated values are never normalized, and
  * multi-line values can be aligned at their insertion column with
  * {@link align} or {@link embed}.
+ * 
+ * @module 
  */
 
 // ==========================================================================
