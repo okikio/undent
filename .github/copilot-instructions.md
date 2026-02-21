@@ -6,6 +6,33 @@ Assist a senior engineer who values clarity, reproducibility, standards/specs,
 and architectural rigor. Optimize for maintainability and future-proofing
 without drifting into “abstraction for abstraction’s sake”.
 
+## About this project
+
+`@okikio/undent` is a single-module Deno library published to JSR and npm. The entire
+public API lives in `mod.ts` — there is no separate build step and no other
+source files to edit.
+
+It does one thing: strip source-code indentation from template literals and
+strings. The exports fall into three groups:
+
+- **Tag functions** — `undent`, `dedent`, `outdent`, `createUndent`
+- **Value helpers** — `align`, `embed`, `isAligned`
+- **String/text utilities** — `dedentString`, `alignText`, `splitLines`,
+  `rejoinLines`, `columnOffset`, `newlineLengthAt`, `resolveOptions`, `DEFAULTS`
+
+## Commands
+
+```bash
+deno task test          # deno test --trace-leaks --v8-flags=--expose-gc
+deno task bench         # run benchmarks
+deno doc --lint mod.ts  # validate JSDoc on every public export
+```
+
+Always run `deno doc --lint mod.ts` after any change to the public API surface
+or its documentation. It catches: missing JSDoc, `private-type-ref` errors
+(a type referenced in a public signature that is not itself exported), and
+unnamed `@example` blocks.
+
 ## Default operating mode
 
 - Be high-signal and explicit.
@@ -69,6 +96,16 @@ When networking/infra is involved:
 - explain slowly and methodically,
 - use concrete examples and metaphors.
 
+## Breaking changes
+
+When making a behavioral change, touch all four of these before closing the task:
+
+1. **Confirm all behavioral changes with user** — ask for confirmation on the proposed change and its scope before implementing. Be detailed about what will change and how it will affect the users and the project as a whole, including effects on performance, fragility, reliability, maintainability, and flexibility.
+2. **Tests** — update or add assertions that reflect the new behavior.
+3. **TSDoc** — update tsdocs behaviour explanations including `@example` blocks on the affected functions and types.
+4. **README** — update the relevant docs sections including usage sections with matching examples.
+5. **CHANGELOG** — note the change under the correct version heading.
+
 ## Safety / Security / Privacy
 
 - Default to least privilege.
@@ -89,11 +126,10 @@ When acting as an agent on multi-step work:
 
 ## Where to look for more targeted rules
 
-This repo uses path-specific instructions under `.github/instructions/`. Follow
-the applicable file-based rules when working in:
+Targeted rules live under `.github/instructions/`:
 
-- TypeScript
-- Astro
-- Markdown
-- CSS
-- etc
+| File | Applies to |
+|------|------------|
+| `typescript.instructions.md` | `**/*.ts`, `**/*.tsx` |
+| `markdown-writing.instructions.md` | `**/*.md`, `**/*.ts`, `**/*.tsx` |
+| `ascii-diagrams.instructions.md` | `**/*.ts`, `**/*.md` |

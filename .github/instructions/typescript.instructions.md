@@ -3,7 +3,7 @@ description: Deno + TS standards for this repo
 applyTo: "**/*.ts,**/*.tsx"
 ---
 
-# TypeScript / Deno Rules (bundlejs-api)
+# TypeScript / Deno Rules
 
 ## Runtime + module model
 
@@ -46,7 +46,7 @@ applyTo: "**/*.ts,**/*.tsx"
 
 - Avoid `any`. Prefer generics, unions, discriminated unions, and narrowing.
 - Prefer `Iterable` / `AsyncIterable` in public APIs over arrays unless there’s
-  a clear reason.
+  a clear reason (performance counts as a valid reason).
 - Prefer `Object.assign(...)` over object spread for object copying/merging.
 - Prefer explicit, narrow return types at module boundaries.
 
@@ -55,24 +55,49 @@ applyTo: "**/*.ts,**/*.tsx"
 - Prefer `Object.assign` over spread for object copying when practical.
   - Use spread only when it materially improves readability.
 
-## Docs quality bar (public surfaces)
+## TSDoc quality bar (public surfaces)
 
-For exported/public APIs:
+For every exported function, interface, type alias, and constant:
 
-- Add TSDoc in plain English.
-- Include at least two examples when the API is non-trivial:
+- Write TSDoc in plain English — explain *why* it exists, not just *what* it is. Ground the reasoning in the problem being solved, the approach taken, and the assumptions/edge cases.
+- Every `@example` block must have a descriptive name that clarifies the scenario and behaviour being demonstrated:
+  ```ts
+  // bad — fails deno doc --lint
+  * @example
+  * ```ts
+  * align("hello");
+  * ```
+
+  // good — named
+  * @example Aligning a multi-line value at its insertion column
+  * ```ts
+  * align("hello");
+  * ```
+  ```
+- Include at least two examples for non-trivial APIs:
   - Example A: common path
-  - Example B: edge case (failure/cancellation/invalid input)
+  - Example B: edge case or configuration variant
+- Every field of an exported interface or type needs its own JSDoc comment.
+- Any type referenced in a public function signature or interface must itself be
+  exported — otherwise `deno doc --lint` reports a `private-type-ref` error.
 
-If logic is complex:
+For complex logic, include:
 
-- add a docstring summarizing intent, problem, reasoning & logic, purpose +
-  assumptions,
-- include a step-by-step algorithm explanation,
-- add ASCII diagrams if it improves comprehension.
+- a docstring summarizing intent, problem, reasoning & logic, purpose + assumptions,
+- a step-by-step algorithm explanation (with a walkthrough of the example inputs/outputs),
+- make clear what abstract technical codes mean, e.g. binary represents character "C" or keycode represents "Enter", etc...,
+- an ASCII diagram if it improves comprehension.
 
-For tricky logic, include a short “walkthrough” comment and (when helpful) ASCII
-structure.
+### Validate with deno doc
+
+Run this after any public API or documentation change:
+
+```bash
+deno doc --lint mod.ts
+```
+
+This is the source of truth for doc coverage. Fix all reported errors before
+closing a task.
 
 ## Error handling
 
