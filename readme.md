@@ -1,5 +1,6 @@
 [![JSR](https://jsr.io/badges/@okikio/undent)](https://jsr.io/@okikio/undent)
 [![JSR Score](https://jsr.io/badges/@okikio/undent/score)](https://jsr.io/@okikio/undent/score)
+[![npm](https://img.shields.io/npm/v/@okikio/undent)](https://www.npmjs.com/package/@okikio/undent)
 [![CI](https://github.com/okikio/undent/actions/workflows/ci.yml/badge.svg)](https://github.com/okikio/undent/actions/workflows/ci.yml)
 
 # undent
@@ -72,7 +73,15 @@ deno add jsr:@okikio/undent
 ```
 
 ```bash
-# Node / Bun (via JSR bridge)
+# Node / Bun — npm registry
+npm install @okikio/undent
+# pnpm add @okikio/undent
+# yarn add @okikio/undent
+# bun add @okikio/undent
+```
+
+```bash
+# Node / Bun — JSR bridge (alternative, no npm account needed)
 npx jsr add @okikio/undent
 # pnpm dlx jsr add @okikio/undent
 # yarn dlx jsr add @okikio/undent
