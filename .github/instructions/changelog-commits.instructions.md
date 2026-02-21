@@ -25,6 +25,39 @@ applyTo: "**"
 Use a `!` after the type/scope to mark breaking changes:
 `feat(api)!: remove align()'s implicit trim behavior`
 
+### Choosing the right type
+
+Ask these questions in order:
+
+1. **Does it change what a user can do?** → `feat`
+   — New export, new option, new behavior that didn't exist before.
+
+2. **Does it fix something broken?** → `fix`
+   — Observable bug: wrong output, crash, incorrect coercion, bad edge case.
+
+3. **Does it only change docs or comments?** → `docs`
+   — README, TSDoc, changelog prose, or `.github/instructions/` files. No code change.
+
+4. **Does it only change whitespace, formatting, or naming?** → `style`
+   — No logic change; a linter or formatter could have made it.
+
+5. **Does it restructure code without changing behavior?** → `refactor`
+   — Rename, extract function, reorganize — output is identical.
+
+6. **Does it make something measurably faster or smaller?** → `perf`
+   — Benchmark-verified improvement. If behavior also changes, use `fix` or `feat`.
+
+7. **Does it add or fix tests?** → `test`
+   — No production code change.
+
+8. **Does it touch CI, build scripts, or dependencies?** → `chore` / `ci` / `build`
+   — `ci` for workflow files, `build` for compile/bundle config, `chore` for everything else (deps, lockfile, tooling).
+
+**Hard rule:** if the change would make a user's code behave differently at
+runtime, it is `feat` or `fix` — never `refactor` or `chore`. Mislabeling a
+user-visible change as `refactor` silently drops it from the changelog and from
+forge's version calculation.
+
 ### Subject line rules (Chris Beams)
 
 1. Target 50 characters; never exceed 72 (hard limit).

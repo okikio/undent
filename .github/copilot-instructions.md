@@ -112,6 +112,9 @@ task:
 4. **README** — update the relevant docs sections including usage sections with
    matching examples.
 5. **CHANGELOG** — note the change under the correct version heading.
+6. **Instructions** — if the change affects how tests, benchmarks, commits, or
+   documentation should be written, update the relevant file in
+   `.github/instructions/`.
 
 ## Safety / Security / Privacy
 
