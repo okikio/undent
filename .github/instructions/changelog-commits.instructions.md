@@ -181,7 +181,14 @@ What you can and should do manually:
 4. Merge the PR.
 5. Create the GitHub release:
    `GITHUB_TOKEN=$(gh auth token) deno task forge release`
-6. Publish to JSR: `deno publish`
+6. Publishing is automated — pushing a GitHub Release triggers `publish.yml`,
+   which publishes to **JSR** (`deno publish`) and **npm** (`deno task build:npm`
+   followed by `npm publish`) in parallel jobs. Both are idempotent; re-running
+   the workflow for an already-published version is safe.
+
+   To publish manually:
+   - JSR: `deno publish`
+   - npm: `deno task build:npm && cd npm && npm publish --access public`
 
 ### Writing changelog entries
 
