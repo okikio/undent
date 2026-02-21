@@ -66,7 +66,9 @@ export type TrimMode = "all" | "one" | "none";
  * ```
  */
 export interface TrimSides {
+  /** How to trim blank lines at the start of the output. */
   leading?: TrimMode;
+  /** How to trim blank lines at the end of the output. */
   trailing?: TrimMode;
 }
 
@@ -185,26 +187,39 @@ export interface Undent {
 
   /**
    * Indent anchor symbol. Place as the first interpolation on its own
-   * line to set an explicit zero-indent reference point.
+   * line to lock the indent baseline to the content lines only.
    *
-   * Normally, `undent` detects the indent from the content lines
-   * automatically. The anchor overrides that detection and sets the
-   * anchor line's indentation as the baseline instead. This is
-   * primarily useful in code generation where you want explicit
-   * control over the output indentation.
+   * By default, `undent` counts every line's leading whitespace —
+   * including the whitespace before each `${}` expression slot — when
+   * detecting the common indent. If an expression slot sits at a
+   * shallower column than the content, it pulls the minimum down and
+   * leaks extra whitespace into the output.
    *
-   * @example
+   * The anchor fixes this: it removes itself from detection, so only
+   * the actual content lines decide the baseline. Content keeps its
+   * relative structure (indentation between lines), while the shared
+   * source-code indent is stripped cleanly.
+   *
+   * @example Code generation with preserved relative spacing
    * ```ts
    * import { undent } from "@okikio/undent";
    *
-   * class Generator {
-   *   render() {
+   * class ServiceGenerator {
+   *   emit(name: string) {
    *     return undent`
    *       ${undent.indent}
-   *         This becomes column 0 in the output.
-   *           This keeps 2 spaces of indent.
+   *         export class ${name}Service {
+   *           constructor() {}
+   *         }
    *     `;
-   *     // "This becomes column 0 in the output.\n  This keeps 2 spaces of indent."
+   *     // Output preserves relative spacing inside the class:
+   *     //
+   *     //   export class FooService {
+   *     //     constructor() {}      ← 2-space indent preserved
+   *     //   }
+   *     //
+   *     // Without the anchor, 2 stray spaces leak into every line
+   *     // because the expression slot's column contaminates detection.
    *   }
    * }
    * ```
@@ -220,10 +235,15 @@ export interface Undent {
  * pipelines via {@link resolveOptions}.
  */
 export interface ResolvedOptions {
+  /** Indent detection strategy: `"common"` scans all lines, `"first"` uses the first content line. */
   strategy: "common" | "first";
+  /** How to trim blank lines at the start of the output. */
   trimLeading: TrimMode;
+  /** How to trim blank lines at the end of the output. */
   trimTrailing: TrimMode;
+  /** When set to a string, replaces newline sequences in template segments. `null` preserves originals. */
   newline: string | null;
+  /** When `true`, every multi-line interpolated value is automatically aligned at its insertion column. */
   alignValues: boolean;
 }
 
@@ -235,9 +255,9 @@ export interface ResolvedOptions {
  * Indent anchor symbol.
  *
  * Place `${undent.indent}` (or import this symbol directly) as the
- * first interpolation on its own line to override automatic indent
- * detection. The anchor line's indentation becomes the zero-column
- * reference point.
+ * first interpolation on its own line to lock the indent baseline to
+ * the content lines. This prevents expression-slot whitespace from
+ * contaminating indent detection.
  *
  * @example
  * ```ts
@@ -246,18 +266,30 @@ export interface ResolvedOptions {
  * // These are equivalent:
  * undent`
  *   ${undent.indent}
- *     content
+ *     export class Foo {
+ *       bar = 1;
+ *     }
  * `;
  * undent`
  *   ${indent}
- *     content
+ *     export class Foo {
+ *       bar = 1;
+ *     }
  * `;
+ * // Both produce: "export class Foo {\n  bar = 1;\n}"
  * ```
  */
 export const indent: unique symbol = Symbol("undent.indent");
 
-/** Brand for values wrapped by {@link align} or {@link embed}. */
-const ALIGNED: unique symbol = Symbol("undent.aligned");
+/**
+ * Brand symbol for values wrapped by {@link align} or {@link embed}.
+ *
+ * You rarely need this directly — use {@link isAligned} to check
+ * whether a value is wrapped, and {@link align}/{@link embed} to
+ * create wrapped values. Exported so the {@link AlignedValue}
+ * interface can reference it in public type signatures.
+ */
+export const ALIGNED: unique symbol = Symbol("undent.aligned");
 
 /** Internal symbol for per-value aligned-text memoization. */
 const ALIGNED_TEXT_CACHE: unique symbol = Symbol("undent.alignedTextCache");
@@ -293,7 +325,9 @@ const ALIGNED_TEXT_CACHE_MAX = 8;
  * functions instead.
  */
 export interface AlignedValue {
+  /** Brand marker. Always `true` for values created by {@link align} or {@link embed}. */
   readonly [ALIGNED]: true;
+  /** The stringified content, ready for insertion into the template output. */
   readonly value: string;
 }
 
