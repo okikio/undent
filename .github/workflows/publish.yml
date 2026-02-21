@@ -23,14 +23,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  # id-token: write is the only permission needed.
-  # JSR's OIDC flow mints a short-lived publish credential from this token;
-  # no secrets or API keys are stored in the repository.
+  # id-token: write is required for JSR's OIDC publish flow.
+  # It mints a short-lived publish credential automatically — no secret needed.
   id-token: write
   contents: read
 
 jobs:
-  publish:
+  publish-jsr:
     name: Publish to JSR
     runs-on: ubuntu-latest
     steps:
@@ -46,5 +45,41 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Publish
+      - name: Publish to JSR
         run: deno publish
+
+  publish-npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+
+      - name: Cache Deno deps
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Build npm package
+        # Compiles mod.ts → CJS + ESM, type-checks against Node types,
+        # and runs the test suite via Node.js before publishing.
+        run: deno task build:npm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish to npm
+        # `npm publish` is idempotent when called with --ignore-scripts:
+        # it exits with a non-zero code for an already-published version,
+        # which we suppress with `|| true` so re-runs of the workflow are safe.
+        run: |
+          cd npm
+          npm publish --access public || echo "Version already published — skipping."
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
