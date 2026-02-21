@@ -337,26 +337,35 @@ const myTag = createUndent({
 
 ### Indent anchors
 
-When a template lives inside deeply nested code, `undent` normally detects the
-indent from the nearest content line. Sometimes you want explicit control.
-Place `${undent.indent}` on its own line to set the zero-indent reference
-point:
+By default, `undent` counts every line's leading whitespace — including the
+whitespace before each `${}` expression slot — when detecting the common indent.
+If an expression slot sits at a shallower column than the content, it pulls the
+minimum down and leaks extra spaces into the output.
+
+Place `${undent.indent}` on its own line to fix this. The anchor removes itself
+from detection, so only actual content lines decide the baseline. Relative
+spacing between content lines is preserved:
 
 ```ts
-class Formatter {
-  render() {
+class ServiceGenerator {
+  emit(name: string) {
     return undent`
       ${undent.indent}
-        This becomes column 0.
-          This keeps 2 spaces of indent.
+        export class ${name}Service {
+          constructor() {}
+        }
     `;
-    // "This becomes column 0.\n  This keeps 2 spaces of indent."
+    // Output preserves relative spacing inside the class:
+    //
+    //   export class FooService {
+    //     constructor() {}      ← 2-space indent preserved
+    //   }
+    //
+    // Without the anchor, 2 stray spaces leak into every line
+    // because the expression slot's column contaminates detection.
   }
 }
 ```
-
-Everything after the anchor is dedented relative to the anchor's position, not
-the source file's formatting.
 
 ## How it works
 
