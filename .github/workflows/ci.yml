@@ -20,6 +20,8 @@ jobs:
       - uses: denoland/setup-deno@v2
       - name: Lint
         run: deno lint
+      - name: Doc Lint
+        run: deno doc --lint mod.ts
 
   fmt:
     name: Format
