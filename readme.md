@@ -335,33 +335,38 @@ const myTag = createUndent({
 
 ### Indent anchors
 
-By default, `undent` counts every line's leading whitespace — including the
-whitespace before each `${}` expression slot — when detecting the common indent.
-If an expression slot sits at a shallower column than the content, it pulls the
-minimum down and leaks extra spaces into the output.
-
-Place `${undent.indent}` on its own line to fix this. The anchor removes itself
-from detection, so only actual content lines decide the baseline. Relative
-spacing between content lines is preserved:
+The anchor's column position becomes the indent baseline. Content at the
+anchor's column becomes column 0 in the output; content deeper than the anchor
+keeps its relative spacing. This gives you explicit control instead of relying
+on automatic detection:
 
 ```ts
-class ServiceGenerator {
+class Generator {
   emit(name: string) {
+    // Anchor and content at the same column → output at column 0:
     return undent`
       ${undent.indent}
-        export class ${name}Service {
-          constructor() {}
-        }
+      export function ${name}() {
+        // implementation
+      }
     `;
-    // Output preserves relative spacing inside the class:
-    //
-    //   export class FooService {
-    //     constructor() {}      ← 2-space indent preserved
-    //   }
-    //
-    // Without the anchor, 2 stray spaces leak into every line
-    // because the expression slot's column contaminates detection.
+    // "export function hello() {\n  // implementation\n}"
   }
+}
+```
+
+Content deeper than the anchor preserves its offset:
+
+```ts
+function indentedOutput() {
+  return undent`
+    ${undent.indent}
+      if (ready) {
+        run();
+      }
+  `;
+  // Content is 2 deeper than anchor → 2-space indent preserved:
+  // "  if (ready) {\n    run();\n  }"
 }
 ```
 
