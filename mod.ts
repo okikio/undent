@@ -40,8 +40,8 @@
  * removed, newlines in interpolated values are never normalized, and
  * multi-line values can be aligned at their insertion column with
  * {@link align} or {@link embed}.
- * 
- * @module 
+ *
+ * @module
  */
 
 // ==========================================================================
@@ -780,8 +780,8 @@ function getProcessedSegments(
   const indentCount = anchored
     ? anchorCol
     : state.opts.strategy === "first"
-      ? detectFirstIndent(effectiveStrings)
-      : detectCommonIndent(effectiveStrings);
+    ? detectFirstIndent(effectiveStrings)
+    : detectCommonIndent(effectiveStrings);
 
   const processed = processStrings(effectiveStrings, indentCount, state.opts);
 

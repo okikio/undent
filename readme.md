@@ -4,8 +4,8 @@
 
 # undent
 
-Strip source-code indentation from template literals and strings.
-Built for Deno. Works everywhere JavaScript runs.
+Strip source-code indentation from template literals and strings. Built for
+Deno. Works everywhere JavaScript runs.
 
 Indented code is readable code. But template literals carry that indentation
 straight into the output:
@@ -24,14 +24,12 @@ console.log(greet("Ayo"));
 Output — 4 unwanted leading spaces, blank lines at both ends:
 
 ```
-
-    Hello, Ayo!
-    Welcome aboard.
-
+Hello, Ayo!
+Welcome aboard.
 ```
 
 You could smash the template to column 0, but then your source becomes
-unreadable. `undent` gives you both — indented source *and* clean output:
+unreadable. `undent` gives you both — indented source _and_ clean output:
 
 ```ts
 import { undent } from "@okikio/undent";
@@ -48,18 +46,18 @@ console.log(greet("Ayo"));
 // Welcome aboard.
 ```
 
-It finds the shared indentation across all lines, strips it, and trims the
-blank lines that come from the backtick placement. Beyond that, it handles
-several things most dedent libraries get wrong:
+It finds the shared indentation across all lines, strips it, and trims the blank
+lines that come from the backtick placement. Beyond that, it handles several
+things most dedent libraries get wrong:
 
 - **Preserves newline styles** — `\n`, `\r\n`, and `\r` pass through
   byte-for-byte, never silently normalized
-- **Aligns multi-line interpolations** — when a `${value}` spans multiple
-  lines, subsequent lines stay pinned to the insertion column
-- **Composes templates** — embed one template inside another without
-  indentation drift
-- **Works on plain strings** — `.string()` handles SQL files, config
-  snippets, and anything without template structure
+- **Aligns multi-line interpolations** — when a `${value}` spans multiple lines,
+  subsequent lines stay pinned to the insertion column
+- **Composes templates** — embed one template inside another without indentation
+  drift
+- **Works on plain strings** — `.string()` handles SQL files, config snippets,
+  and anything without template structure
 
 ## Install
 
@@ -100,8 +98,8 @@ console.log(sql);
 // WHERE  active = true
 ```
 
-Relative indentation within the content is preserved — only the common
-leading whitespace is removed:
+Relative indentation within the content is preserved — only the common leading
+whitespace is removed:
 
 ```ts
 const config = undent`
@@ -143,9 +141,9 @@ const clean = dedentString(`
 
 ### Multi-line values
 
-When you interpolate a multi-line value, regular string concatenation breaks
-the visual alignment. The first line lands at the insertion point, but every
-line after it snaps back to column 0:
+When you interpolate a multi-line value, regular string concatenation breaks the
+visual alignment. The first line lands at the insertion point, but every line
+after it snaps back to column 0:
 
 ```ts
 const items = "- alpha\n- beta\n- gamma";
@@ -166,7 +164,7 @@ const result = undent`
 column where it was inserted:
 
 ```ts
-import { undent, align } from "@okikio/undent";
+import { align, undent } from "@okikio/undent";
 
 const items = "- alpha\n- beta\n- gamma";
 
@@ -187,7 +185,7 @@ file, a code block from a constant — use `embed()`. It strips the value's own
 indentation first, then aligns it at the insertion column:
 
 ```ts
-import { undent, embed } from "@okikio/undent";
+import { embed, undent } from "@okikio/undent";
 
 const snippet = `
     SELECT id, name
@@ -224,21 +222,21 @@ u`
 //         value B
 ```
 
-> `align()` and `embed()` always align regardless of the `alignValues`
-> setting — they're the per-value opt-in.
+> `align()` and `embed()` always align regardless of the `alignValues` setting —
+> they're the per-value opt-in.
 
 ### Trimming
 
-By default, `undent` removes all blank lines at the start and end of the
-output — the newline after the opening backtick and the whitespace-only line
-before the closing one. The `trim` option gives you control:
+By default, `undent` removes all blank lines at the start and end of the output
+— the newline after the opening backtick and the whitespace-only line before the
+closing one. The `trim` option gives you control:
 
-| Value | What it does |
-|-------|-------------|
-| `"all"` *(default)* | Remove all leading and trailing blank lines |
-| `"one"` | Remove at most one blank line from each end |
-| `"none"` | Keep everything, including the wrapper lines |
-| `{ leading, trailing }` | Control each side independently |
+| Value                   | What it does                                 |
+| ----------------------- | -------------------------------------------- |
+| `"all"` _(default)_     | Remove all leading and trailing blank lines  |
+| `"one"`                 | Remove at most one blank line from each end  |
+| `"none"`                | Keep everything, including the wrapper lines |
+| `{ leading, trailing }` | Control each side independently              |
 
 ```ts
 const keepWrappers = undent.with({ trim: "none" });
@@ -262,7 +260,7 @@ asymmetric`
 
 `undent` supports two strategies for deciding how much whitespace to strip:
 
-**Common indent** *(default)* scans every content line and strips the smallest
+**Common indent** _(default)_ scans every content line and strips the smallest
 shared indent. This is the safest choice:
 
 ```ts
@@ -303,14 +301,14 @@ const firstLine = undent.with({ strategy: "first" });
 mutated, so you can layer configurations safely:
 
 ```ts
-const base = undent.with({ newline: "\n" });        // normalize newlines to LF
-const strict = base.with({ trim: "none" });          // also keep wrapper lines
-const sql = base.with({ strategy: "first" });        // first-line detection
+const base = undent.with({ newline: "\n" }); // normalize newlines to LF
+const strict = base.with({ trim: "none" }); // also keep wrapper lines
+const sql = base.with({ strategy: "first" }); // first-line detection
 ```
 
 The `newline` option replaces every `\n`, `\r\n`, and `\r` in template segments
-with the string you specify. Set it to `null` (the default) to preserve
-original sequences. Interpolated values are never affected.
+with the string you specify. Set it to `null` (the default) to preserve original
+sequences. Interpolated values are never affected.
 
 To build an instance from scratch instead of deriving from `undent`:
 
@@ -326,10 +324,10 @@ const myTag = createUndent({
 
 **Pre-built instances:**
 
-| Export | Strategy | Trim | Notes |
-|--------|----------|------|-------|
-| `undent` | `"common"` | `"all"` | Default export |
-| `outdent` | `"first"` | `"one"` | Matches `npm:outdent` behavior |
+| Export    | Strategy   | Trim    | Notes                          |
+| --------- | ---------- | ------- | ------------------------------ |
+| `undent`  | `"common"` | `"all"` | Default export                 |
+| `outdent` | `"first"`  | `"one"` | Matches `npm:outdent` behavior |
 
 > `dedent` is also exported as a convenience alias for `undent`.
 
@@ -373,20 +371,20 @@ function indentedOutput() {
 ## How it works
 
 Tagged templates give `undent` a structural advantage. JavaScript splits
-template literals into two parts — static segments (the text between `${}`)
-and interpolated values. `undent` only processes the segments; your values pass
+template literals into two parts — static segments (the text between `${}`) and
+interpolated values. `undent` only processes the segments; your values pass
 through untouched:
 
 ```
-  template literal
-         │
-         ├─ segments ─▶ detect indent ─▶ strip ─▶ trim ends ─▶ normalize
-         │                                                         │
-         ├─ values ────────────────── (untouched) ─────────────────┤
-         │                                                         │
-         └─────────────────────────── join ◀───────────────────────┘
-                                       │
-                                    result
+template literal
+       │
+       ├─ segments ─▶ detect indent ─▶ strip ─▶ trim ends ─▶ normalize
+       │                                                         │
+       ├─ values ────────────────── (untouched) ─────────────────┤
+       │                                                         │
+       └─────────────────────────── join ◀───────────────────────┘
+                                     │
+                                  result
 ```
 
 Processed segments are cached by the `TemplateStringsArray` identity — the
@@ -400,33 +398,33 @@ preserved byte-for-byte.
 
 ## API
 
-| Export | Description |
-|--------|-------------|
-| `undent` | Default tagged template (common indent, trim all). Also the default export |
-| `dedent` | Alias for `undent` |
-| `outdent` | Pre-built instance (first-line indent, trim one) |
-| `createUndent(options?)` | Create a custom instance from scratch |
-| `align(value)` | Mark a value for column alignment |
-| `embed(value)` | Strip a value's own indent, then align it |
-| `isAligned(value)` | Type guard for values wrapped by `align` or `embed` |
-| `dedentString(input, trimLeading?, trimTrailing?)` | Standalone string dedent |
-| `alignText(text, pad)` | Pad subsequent lines of text with a prefix string |
-| `splitLines(text)` | Split a string preserving exact newline sequences |
-| `rejoinLines(lines, seps)` | Reconstruct a string from `splitLines` output |
-| `columnOffset(text)` | Count characters since the last newline (insertion column) |
-| `newlineLengthAt(text, i)` | Length of the newline sequence at position `i` (0, 1, or 2) |
-| `resolveOptions(base, overrides)` | Merge option objects for custom pipelines |
-| `DEFAULTS` | The default resolved options constant |
-| `indent` | Symbol for indent anchors |
+| Export                                             | Description                                                                |
+| -------------------------------------------------- | -------------------------------------------------------------------------- |
+| `undent`                                           | Default tagged template (common indent, trim all). Also the default export |
+| `dedent`                                           | Alias for `undent`                                                         |
+| `outdent`                                          | Pre-built instance (first-line indent, trim one)                           |
+| `createUndent(options?)`                           | Create a custom instance from scratch                                      |
+| `align(value)`                                     | Mark a value for column alignment                                          |
+| `embed(value)`                                     | Strip a value's own indent, then align it                                  |
+| `isAligned(value)`                                 | Type guard for values wrapped by `align` or `embed`                        |
+| `dedentString(input, trimLeading?, trimTrailing?)` | Standalone string dedent                                                   |
+| `alignText(text, pad)`                             | Pad subsequent lines of text with a prefix string                          |
+| `splitLines(text)`                                 | Split a string preserving exact newline sequences                          |
+| `rejoinLines(lines, seps)`                         | Reconstruct a string from `splitLines` output                              |
+| `columnOffset(text)`                               | Count characters since the last newline (insertion column)                 |
+| `newlineLengthAt(text, i)`                         | Length of the newline sequence at position `i` (0, 1, or 2)                |
+| `resolveOptions(base, overrides)`                  | Merge option objects for custom pipelines                                  |
+| `DEFAULTS`                                         | The default resolved options constant                                      |
+| `indent`                                           | Symbol for indent anchors                                                  |
 
 ### Options
 
 ```ts
 interface UndentOptions {
-  strategy?: "common" | "first";     // How to detect indent (default: "common")
-  trim?: TrimMode | TrimSides;       // How to trim wrapper lines (default: "all")
-  newline?: string | null;           // Normalize segment newlines (default: null)
-  alignValues?: boolean;             // Auto-align all multi-line values (default: false)
+  strategy?: "common" | "first"; // How to detect indent (default: "common")
+  trim?: TrimMode | TrimSides; // How to trim wrapper lines (default: "all")
+  newline?: string | null; // Normalize segment newlines (default: null)
+  alignValues?: boolean; // Auto-align all multi-line values (default: false)
 }
 
 type TrimMode = "all" | "one" | "none";
@@ -443,12 +441,12 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/)
 for automated versioning and changelog generation via
 [`@roka/forge`](https://jsr.io/@roka/forge).
 
-| Prefix | Version effect |
-|--------|---------------|
-| `fix:` | Patch bump |
-| `feat:` | Minor bump |
-| `feat!:` / `BREAKING CHANGE` | Major bump |
-| `chore:`, `docs:`, `test:` | No bump |
+| Prefix                       | Version effect |
+| ---------------------------- | -------------- |
+| `fix:`                       | Patch bump     |
+| `feat:`                      | Minor bump     |
+| `feat!:` / `BREAKING CHANGE` | Major bump     |
+| `chore:`, `docs:`, `test:`   | No bump        |
 
 ```bash
 # Run tests
