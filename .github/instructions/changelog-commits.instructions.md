@@ -17,6 +17,18 @@ applyTo: "**"
 [optional footer(s)]
 ```
 
+**Syntax rules — every commit must satisfy all of these:**
+
+| Rule | Correct | Wrong |
+|---|---|---|
+| Type is lowercase | `fix:` | `Fix:`, `FIX:` |
+| Single space after colon | `fix: avoid` | `fix:avoid`, `fix:  avoid` |
+| No period at end of subject | `fix: avoid crash` | `fix: avoid crash.` |
+| Subject capitalised | `feat: Add align()` | `feat: add align()` |
+| Blank line between subject and body | _(blank line)_ | body immediately after subject |
+| No trailing whitespace | — | lines ending with spaces |
+| No emoji in subject | `feat: add embed()` | `✨ feat: add embed()` |
+
 **Types that appear in the changelog:** `feat`, `fix`
 
 **Types filtered from the changelog:** `chore`, `docs`, `style`, `refactor`,
@@ -24,6 +36,119 @@ applyTo: "**"
 
 Use a `!` after the type/scope to mark breaking changes:
 `feat(api)!: remove align()'s implicit trim behavior`
+
+### Anti-patterns — never write these
+
+These are the commit patterns that make the log useless. Each one has a direct
+fix.
+
+**Typeless / formatless subjects** — if there is no `type:` prefix, tooling
+cannot categorise the commit and forge silently drops it from the changelog.
+
+```
+# Bad — no type, nothing actionable
+update
+fix stuff
+typo
+changes
+misc
+tweaks
+
+# Good
+docs: fix typo in dedentString example
+fix: handle empty string in columnOffset
+```
+
+**WIP commits on main** — work-in-progress commits signal an unfinished thought.
+Squash them before merging. A WIP commit that ships is a changelog entry that
+reads "WIP".
+
+```
+# Bad — never let these reach main
+WIP
+WIP: almost working
+wip: untested refactor
+temp
+temp fix
+stash
+```
+
+**Vague descriptions** — a description that could apply to any commit in any
+repo is not a description. Watch especially for weasel verbs: **enhance**,
+**improve**, **update**, **refactor**, **tweak**, **clean up**, **address**,
+**various**. None of them say what changed.
+
+```
+# Bad — describes nothing; "enhance" is content-free
+docs: enhance commit message and changelog standards
+fix: improve splitLines
+chore: update deps
+refactor: clean up mod.ts
+fix: address review comments
+chore: various fixes
+
+# Good — names what was added, fixed, or removed
+docs: add anti-patterns and syntax rules to commit instructions
+fix: handle bare \r as a line separator in splitLines
+chore: bump @std/assert to 1.0.19
+refactor: extract rejoinLines into a standalone helper
+fix: prevent NaN in alignText when pad is empty string
+fix: prevent double-stripping on nested undent calls
+```
+
+**Ticket / PR numbers in the subject** — numbers in the subject become the
+changelog entry, and a number is meaningless without the tracker open in
+another tab. Put references in the body or footer.
+
+```
+# Bad — changelog reads as "fix #442"
+fix: #442
+fix: issue 442
+
+# Good — describe the fix, reference in footer
+fix: prevent NaN in alignText when pad is empty string
+
+Closes #442
+```
+
+**Capitalised or mixed-case type** — breaks parser matching in some conventional
+commit tools and looks inconsistent.
+
+```
+# Bad
+Fix: remove trim from align output
+FEAT: add embed helper
+Chore: bump deno.lock
+
+# Good
+fix: remove trim from align output
+feat: add embed helper
+chore: bump deno.lock
+```
+
+**Scope as file path** — the scope names a logical area, not a file.
+
+```
+# Bad
+feat(mod.ts): add embed
+fix(src/utils/lines.ts): handle \r
+
+# Good
+feat(embed): add embed helper
+fix(splitLines): handle bare \r as line separator
+```
+
+**More than one logical change per commit** — if you need "and" to describe the
+subject, it is two commits.
+
+```
+# Bad — two unrelated changes
+fix: handle \r and also add new embed helper
+
+# Good — two commits
+fix: handle bare \r in splitLines
+feat: add embed helper for pre-indented values
+```
 
 ### Choosing the right type
 
