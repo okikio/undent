@@ -150,12 +150,34 @@ fix: handle bare \r in splitLines
 feat: add embed helper for pre-indented values
 ```
 
+**`feat` for infrastructure additions** — `feat` means a user-visible API
+change and triggers a minor version bump. Build scripts, publish workflows,
+and developer tooling are infrastructure; package consumers never see them.
+Using `feat` here bumps the version for a change users cannot observe and adds
+a misleading "Features" entry to the changelog.
+
+```
+# Bad — no user-visible API changed; wrongly bumps minor version
+feat(build): add npm package build script using @deno/dnt
+feat(ci): add publish workflow
+feat: add scripts/build_npm.ts
+
+# Good — infrastructure type, no version bump, no changelog entry
+build(npm): add package build script using @deno/dnt
+ci: add npm publish job to publish workflow
+build: add scripts/build_npm.ts
+```
+
 ### Choosing the right type
 
 Ask these questions in order:
 
-1. **Does it change what a user can do?** → `feat` — New export, new option, new
-   behavior that didn't exist before.
+1. **Does it change what a _consumer_ of the package can do?** → `feat` — New
+   export, new option, new runtime behavior that didn't exist before. The test:
+   would a user need to update their own code to take advantage of it?
+   **Infrastructure additions (build scripts, CI workflows, publish tooling)
+   are never `feat`** even if they are new — they are not part of the public
+   API surface.
 
 2. **Does it fix something broken?** → `fix` — Observable bug: wrong output,
    crash, incorrect coercion, bad edge case.
