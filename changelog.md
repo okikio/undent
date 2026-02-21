@@ -10,7 +10,20 @@ from [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## undent@0.2.0
 
-- ✨ add memory regression tests to prevent leaks
+### Added
+
+- Package is now published to **npm** as
+  [`@okikio/undent`](https://www.npmjs.com/package/@okikio/undent).
+  Node.js and Bun users can install directly with `npm install @okikio/undent`
+  in addition to the existing `npx jsr add @okikio/undent` path. The package
+  ships both CJS (`require`) and ESM (`import`) builds with full TypeScript
+  declarations.
+
+### Changed
+
+- Memory regression tests now use a two-phase growth-rate check instead of a
+  single before/after snapshot, catching leaks that one-time initialisation
+  overhead (JIT compilation, WeakMap warming) would previously mask.
 
 ## [0.1.0] - 2026-02-20
 
