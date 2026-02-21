@@ -96,6 +96,24 @@ Breaking changes must appear in the commit footer even when the type already
 uses `!`. Both the `!` in the subject and the `BREAKING CHANGE` footer are
 required so tooling reliably detects and surfaces the change.
 
+### How forge reads commits
+
+This project uses `deno task forge` (`jsr:@roka/forge`) to calculate versions
+and generate changelogs. Forge reads conventional commits directly:
+
+- `fix` → patch version bump
+- `feat` → minor version bump
+- `!` suffix or `BREAKING CHANGE` footer → major version bump
+- All other types (`chore`, `docs`, `refactor`, etc.) → no version bump
+
+For a single-package repo, the scope can be omitted — `feat: add thing` works
+identically to `feat(undent): add thing`. Omit the scope to keep subjects
+concise unless you need to distinguish between multiple packages.
+
+**The commit subject becomes the changelog entry verbatim.** Forge extracts it
+as-is. There is no editing step between what you type and what users read, so
+subject line quality matters more than usual.
+
 ---
 
 ## Changelogs
@@ -104,23 +122,30 @@ The changelog is a communication contract with users. It is not a byproduct of
 development. It is the primary artifact that tells people whether to upgrade,
 what will break, and whether the project is actively maintained.
 
-### Structure (Keep a Changelog)
+### Structure (managed by forge)
 
-- Keep an `[Unreleased]` section at the top of `changelog.md` that accumulates
-  changes between tags.
-- At release time, rename `[Unreleased]` to the version and date, then open a
-  fresh `[Unreleased]` section.
-- Latest version comes first.
-- Use these six standard categories (omit empty ones):
+`changelog.md` is generated and updated by `forge bump` — do not manually
+maintain version headers or `[Unreleased]` sections. Forge owns the file
+structure.
 
-  | Category     | What belongs here                          |
-  | ------------ | ------------------------------------------ |
-  | `Added`      | New features, new exports, new options     |
-  | `Changed`    | Behavior changes to existing functionality |
-  | `Deprecated` | Things that still work but will be removed |
-  | `Removed`    | Removed features, removed exports          |
-  | `Fixed`      | Bug fixes                                  |
-  | `Security`   | Vulnerability patches                      |
+What you can and should do manually:
+
+- Edit entries after `forge bump` creates the PR to add context, group related
+  changes, or clarify impact where the raw commit subject is insufficient.
+- Add `**Breaking:**` prefixes to breaking change entries if they need
+  clearer callouts.
+- Add entries for any user-visible `chore`, `refactor`, or `perf` commits that
+  were miscategorized and would otherwise be silently omitted.
+
+### Release workflow
+
+1. Preview pending changes: `deno task forge changelog`
+2. Bump version and open PR: `GITHUB_TOKEN=$(gh auth token) deno task forge bump --release --pr`
+3. Review the generated PR — edit `changelog.md` entries where the raw commit
+   subject needs more context.
+4. Merge the PR.
+5. Create the GitHub release: `GITHUB_TOKEN=$(gh auth token) deno task forge release`
+6. Publish to JSR: `deno publish`
 
 ### Writing changelog entries
 
@@ -184,19 +209,17 @@ Yanked due to a regression in `dedentString` that corrupted `\r\n` line endings.
 Use 0.8.2 instead.
 ```
 
-### Pre-release checklist
+### Pre-release review checklist
 
-Before tagging a release:
+Before approving the bump PR:
 
-1. Rename `[Unreleased]` to the new version with today's date.
-2. Read every generated entry. Ask: "would a new user of this package understand
-   what changed and why?"
-3. Group related entries and add context where the commit subject alone is
+1. Read every generated changelog entry. Ask: "would a new user of this package
+   understand what changed and why?"
+2. Group related entries and add context where the commit subject alone is
    insufficient.
-4. Diff the full commit log against the generated entries. Check whether any
-   `chore`, `refactor`, or `perf` commits actually had user-visible effects that
-   were miscategorized (changed API timing, dropped support for something,
-   altered output format). If so, add them manually.
-5. Verify breaking changes are prominent and include a migration path.
-6. Verify the narrative reads as a coherent story of deliberate work, not a
+3. Diff the full commit log against the generated entries. Check whether any
+   `chore`, `refactor`, or `perf` commits had user-visible effects that were
+   miscategorized. If so, add them manually.
+4. Verify breaking changes are prominent and include a migration path.
+5. Verify the narrative reads as a coherent story of deliberate work, not a
    random list.
