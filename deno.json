@@ -8,6 +8,9 @@
     "forge": "deno run -A jsr:@roka/forge",
     "build:npm": "deno run -A scripts/build_npm.ts"
   },
+  "fmt": {
+    "proseWrap": "preserve"
+  },
   "publish": {
     "include": [
       "mod.ts",

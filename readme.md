@@ -5,8 +5,7 @@
 
 # undent
 
-Strip source-code indentation from template literals and strings. Built for
-Deno. Works everywhere JavaScript runs.
+Strip source-code indentation from template literals and strings. Built for Deno, Node.js, Bun, etc... Works everywhere JavaScript runs.
 
 Indented code is readable code. But template literals carry that indentation
 straight into the output:
