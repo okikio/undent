@@ -29,29 +29,30 @@ Use a `!` after the type/scope to mark breaking changes:
 
 Ask these questions in order:
 
-1. **Does it change what a user can do?** → `feat`
-   — New export, new option, new behavior that didn't exist before.
+1. **Does it change what a user can do?** → `feat` — New export, new option, new
+   behavior that didn't exist before.
 
-2. **Does it fix something broken?** → `fix`
-   — Observable bug: wrong output, crash, incorrect coercion, bad edge case.
+2. **Does it fix something broken?** → `fix` — Observable bug: wrong output,
+   crash, incorrect coercion, bad edge case.
 
-3. **Does it only change docs or comments?** → `docs`
-   — README, TSDoc, changelog prose, or `.github/instructions/` files. No code change.
+3. **Does it only change docs or comments?** → `docs` — README, TSDoc, changelog
+   prose, or `.github/instructions/` files. No code change.
 
-4. **Does it only change whitespace, formatting, or naming?** → `style`
-   — No logic change; a linter or formatter could have made it.
+4. **Does it only change whitespace, formatting, or naming?** → `style` — No
+   logic change; a linter or formatter could have made it.
 
-5. **Does it restructure code without changing behavior?** → `refactor`
-   — Rename, extract function, reorganize — output is identical.
+5. **Does it restructure code without changing behavior?** → `refactor` —
+   Rename, extract function, reorganize — output is identical.
 
-6. **Does it make something measurably faster or smaller?** → `perf`
-   — Benchmark-verified improvement. If behavior also changes, use `fix` or `feat`.
+6. **Does it make something measurably faster or smaller?** → `perf` —
+   Benchmark-verified improvement. If behavior also changes, use `fix` or
+   `feat`.
 
-7. **Does it add or fix tests?** → `test`
-   — No production code change.
+7. **Does it add or fix tests?** → `test` — No production code change.
 
-8. **Does it touch CI, build scripts, or dependencies?** → `chore` / `ci` / `build`
-   — `ci` for workflow files, `build` for compile/bundle config, `chore` for everything else (deps, lockfile, tooling).
+8. **Does it touch CI, build scripts, or dependencies?** → `chore` / `ci` /
+   `build` — `ci` for workflow files, `build` for compile/bundle config, `chore`
+   for everything else (deps, lockfile, tooling).
 
 **Hard rule:** if the change would make a user's code behave differently at
 runtime, it is `feat` or `fix` — never `refactor` or `chore`. Mislabeling a
@@ -165,19 +166,21 @@ What you can and should do manually:
 
 - Edit entries after `forge bump` creates the PR to add context, group related
   changes, or clarify impact where the raw commit subject is insufficient.
-- Add `**Breaking:**` prefixes to breaking change entries if they need
-  clearer callouts.
+- Add `**Breaking:**` prefixes to breaking change entries if they need clearer
+  callouts.
 - Add entries for any user-visible `chore`, `refactor`, or `perf` commits that
   were miscategorized and would otherwise be silently omitted.
 
 ### Release workflow
 
 1. Preview pending changes: `deno task forge changelog`
-2. Bump version and open PR: `GITHUB_TOKEN=$(gh auth token) deno task forge bump --release --pr`
+2. Bump version and open PR:
+   `GITHUB_TOKEN=$(gh auth token) deno task forge bump --release --pr`
 3. Review the generated PR — edit `changelog.md` entries where the raw commit
    subject needs more context.
 4. Merge the PR.
-5. Create the GitHub release: `GITHUB_TOKEN=$(gh auth token) deno task forge release`
+5. Create the GitHub release:
+   `GITHUB_TOKEN=$(gh auth token) deno task forge release`
 6. Publish to JSR: `deno publish`
 
 ### Writing changelog entries
