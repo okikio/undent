@@ -24,12 +24,15 @@ console.log(greet("Ayo"));
 Output — 4 unwanted leading spaces, blank lines at both ends:
 
 ```
-Hello, Ayo!
-Welcome aboard.
+
+    Hello, Ayo!
+    Welcome aboard.
+
 ```
 
-You could smash the template to column 0, but then your source becomes
-unreadable. `undent` gives you both — indented source _and_ clean output:
+You could smash the template to column 0, but then your source becomes unreadable. 
+
+`undent` fixes this issues by letting you write nicely indented templates without the extra spaces in the output:
 
 ```ts
 import { undent } from "@okikio/undent";
@@ -44,6 +47,11 @@ function greet(name: string) {
 console.log(greet("Ayo"));
 // Hello, Ayo!
 // Welcome aboard.
+```
+
+```
+Hello, Ayo!
+Welcome aboard.
 ```
 
 It finds the shared indentation across all lines, strips it, and trims the blank
