@@ -1,4 +1,5 @@
 ---
+description: ASCII diagram conventions for this repo
 applyTo: "**/*.ts,**/*.md"
 ---
 

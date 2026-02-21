@@ -21,15 +21,11 @@ applyTo: "**/*.ts,**/*.tsx"
 
 ## Imports
 
-- Group imports by purpose (stdlib/external/internal/types).
-- Separate type imports from value imports (`import type { ... }`).
-- Prefer workspace aliases when the repo uses them (e.g. `@bundle/*`,
-  `#shared/*`).
-- Use explicit file extensions in imports when the codebase does.
-- Separate type imports from runtime imports.
-- Group imports by role:
+- Separate type imports from value imports using `import type { ... }`.
+- Use explicit file extensions as the codebase does.
+- Group imports by role and purpose, in this order:
   1. types
-  2. framework/runtime
+  2. framework/runtime (stdlib/external)
   3. shared/internal modules
   4. local modules
 

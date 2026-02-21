@@ -1,8 +1,9 @@
 ---
+description: Documentation writing style for this repo
 applyTo: "**/*.md,**/*.ts,**/*.tsx"
 ---
 
-# Documentation Writing Style (should also apply to tsdocs)
+# Documentation Writing Style (should also apply to TSDocs)
 
 ## Narrative structure
 

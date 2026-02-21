@@ -133,3 +133,6 @@ Targeted rules live under `.github/instructions/`:
 | `typescript.instructions.md` | `**/*.ts`, `**/*.tsx` |
 | `markdown-writing.instructions.md` | `**/*.md`, `**/*.ts`, `**/*.tsx` |
 | `ascii-diagrams.instructions.md` | `**/*.ts`, `**/*.md` |
+| `testing.instructions.md` | `**/*_test.ts`, `**/*.test.ts` |
+| `benchmarking.instructions.md` | `**/*_bench.ts`, `**/*bench*.ts` |
+| `changelog-commits.instructions.md` | `**` (all files) |

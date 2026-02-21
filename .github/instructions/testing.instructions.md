@@ -59,7 +59,7 @@ const input = `
 const result = undent.string(input);
 
 // Assert: verify the observable output
-assertEquals(result, "hello\n  world\n");
+expect(result).toBe("hello\n  world\n");
 ```
 
 Duplicating setup between two tests is acceptable when it makes each test
@@ -79,7 +79,7 @@ Import fast-check via `npm:fast-check` and verify these invariants:
 ```ts
 fc.assert(
   fc.property(fc.string(), (s) => {
-    assertEquals(dedentString(dedentString(s)), dedentString(s));
+    expect(dedentString(dedentString(s))).toBe(dedentString(s));
   }),
 );
 ```
@@ -89,7 +89,7 @@ fc.assert(
 ```ts
 fc.assert(
   fc.property(fc.string(), (s) => {
-    assertEquals(rejoinLines(...splitLines(s)), s);
+    expect(rejoinLines(...splitLines(s))).toBe(s);
   }),
 );
 ```
@@ -102,7 +102,7 @@ fc.assert(
     const contentChars = s.replace(/\s/g, "");
     const result = undent.string(s);
     for (const ch of contentChars) {
-      assert(result.includes(ch));
+      expect(result).toContain(ch);
     }
   }),
 );
@@ -114,14 +114,14 @@ return ranges:
 ```ts
 fc.assert(
   fc.property(fc.string(), (s) => {
-    assert(columnOffset(s) >= 0);
+    expect(columnOffset(s)).toBeGreaterThanOrEqual(0);
   }),
 );
 
 fc.assert(
   fc.property(fc.string(), fc.nat(), (s, i) => {
     const len = newlineLengthAt(s, i);
-    assert(len === 0 || len === 1 || len === 2);
+    expect([0, 1, 2]).toContain(len);
   }),
 );
 ```
@@ -134,8 +134,8 @@ never bleed state between invocations:
 const results = ["a", "bb", "ccc"].map((v) => undent`prefix ${v} suffix`);
 // All results share the same trimming structure — only the interpolated
 // value differs.
-assert(results.every((r) => r.startsWith("prefix ")));
-assert(results.every((r) => r.endsWith(" suffix")));
+expect(results.every((r) => r.startsWith("prefix "))).toBe(true);
+expect(results.every((r) => r.endsWith(" suffix"))).toBe(true);
 ```
 
 ## Oracle / compatibility tests
@@ -145,13 +145,13 @@ Don't only test against documented behavior samples. Run `npm:dedent` and
 output for the common behavioral subset:
 
 ```ts
-import dedent from "npm:dedent";
+import npmDedent from "npm:dedent";
 
 fc.assert(
   fc.property(templateArbitrary(), ({ strings, values }) => {
     const ours = undent(strings, ...values);
-    const theirs = dedent(strings, ...values);
-    assertEquals(ours, theirs);
+    const theirs = npmDedent(strings, ...values);
+    expect(ours).toBe(theirs);
   }),
 );
 ```
@@ -160,19 +160,21 @@ This catches behavioral regressions that hand-crafted examples miss.
 
 ## Boundary value tests
 
-For any feature with an "N lines" threshold, always test N = 0, 1, 2, 3, 10, and N (e.g. 100).
+For any feature with an "N lines" threshold, always test N = 0, 1, 2, and 3.
 The `trim` option is the prime example — test 0, 1, and 2 blank lines at each
 edge to catch off-by-one mutations:
 
 ```ts
+const trimAll = undent.with({ trim: "all" });
+
 // 0 blank lines at start — nothing to trim
-assertEquals(undent({ trim: "start" })`first line`, "first line");
+expect(trimAll`first line`).toBe("first line");
 
 // 1 blank line at start — exactly at boundary
-assertEquals(undent({ trim: "start" })`\nfirst line`, "first line");
+expect(trimAll`\nfirst line`).toBe("first line");
 
 // 2 blank lines at start — should also trim
-assertEquals(undent({ trim: "start" })`\n\nfirst line`, "first line");
+expect(trimAll`\n\nfirst line`).toBe("first line");
 ```
 
 ## Edge cases to always cover
