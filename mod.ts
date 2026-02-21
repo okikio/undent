@@ -1,134 +1,223 @@
 /**
  * @module undent
  *
- * A lean, Deno-first dedent/outdent utility with strong TypeScript types,
- * predictable behavior, and first-class support for template composition.
+ * Strip source-code indentation from template literals and strings.
  *
- * When you write multi-line template literals, the source code indentation
- * bleeds into the output. This module strips that structural indent while
- * preserving the relative indentation you actually want. It also trims
- * "wrapper" blank lines (the newline after the backtick and before the
- * closing backtick) and lets you safely embed multi-line interpolated
- * values without losing alignment.
+ * When you write multi-line template literals inside functions, classes,
+ * or other indented blocks, the indentation from your source code bleeds
+ * into the output string. `undent` removes that structural indent while
+ * keeping any relative indentation you actually want.
  *
- * Because dedenting never eats non-whitespace characters, newline
- * normalization only touches template segments (never values), and
- * alignment preserves your values' original newline sequences, you can
- * compose templates freely without worrying about corruption.
+ * ```ts
+ * import { undent } from "@okikio/undent";
  *
- * Templates and arbitrary strings use different algorithms. Template
- * literals have structural guarantees from syntax (static segments +
- * interpolated values) that let us dedent the static parts reliably.
- * Arbitrary strings passed to `.string()` can start with content on the
- * first line, use any newline style, and may not follow those assumptions,
- * so they get a dedicated safe algorithm that scans every line.
+ * // Without undent — output has 4 unwanted leading spaces per line:
+ * const bad = `
+ *     Hello, world!
+ *     Welcome aboard.
+ * `;
+ *
+ * // With undent — clean output, readable source:
+ * const good = undent`
+ *     Hello, world!
+ *     Welcome aboard.
+ * `;
+ * // "Hello, world!\nWelcome aboard."
+ * ```
+ *
+ * Two processing paths handle different input shapes:
+ *
+ * - **Tagged templates** split the literal into static segments and
+ *   interpolated values. Only the segments are processed — values pass
+ *   through untouched. Results are cached per call site.
+ *
+ * - **Plain strings** (via `.string()` or {@link dedentString}) scan
+ *   every line for the minimum indent, strip it, and trim wrapper blank
+ *   lines. Original newline sequences (`\n`, `\r\n`, `\r`) are
+ *   preserved byte-for-byte.
+ *
+ * Both paths share the same guarantees: non-whitespace content is never
+ * removed, newlines in interpolated values are never normalized, and
+ * multi-line values can be aligned at their insertion column with
+ * {@link align} or {@link embed}.
  */
 
 // ==========================================================================
 // Public types
 // ==========================================================================
 
-/** Controls how leading/trailing blank lines are handled. */
+/**
+ * Controls how leading and trailing blank lines are trimmed.
+ *
+ * - `"all"` — remove every blank line at the edge (default)
+ * - `"one"` — remove at most one blank line from each end
+ * - `"none"` — keep everything, including wrapper lines
+ */
 export type TrimMode = "all" | "one" | "none";
 
-/** Per-side trim control for asymmetric trimming. */
+/**
+ * Per-side trim control. Use this when you want different behavior
+ * on the leading vs. trailing edge:
+ *
+ * ```ts
+ * const u = undent.with({
+ *   trim: { leading: "none", trailing: "all" },
+ * });
+ * ```
+ */
 export interface TrimSides {
   leading?: TrimMode;
   trailing?: TrimMode;
 }
 
 /**
- * Configuration for indentation stripping, trimming, newline
- * normalization, and value alignment.
+ * Options for configuring an `undent` instance.
+ *
+ * Every option has a sensible default. You only need to set the ones
+ * you want to change:
+ *
+ * ```ts
+ * const u = undent.with({ strategy: "first", trim: "one" });
+ * ```
  */
 export interface UndentOptions {
   /**
-   * How indentation is detected from template segments.
+   * How to decide which whitespace is "structural" indent.
    *
-   * - `"common"` — minimum indent across all content lines in all segments.
-   *   This is the safest default and behaves like classic "dedent".
-   * - `"first"` — indent of the first content line after a newline.
-   *   This matches many "outdent"-style libraries.
+   * - `"common"` — scan every content line and strip the smallest
+   *   shared indent. Safest default.
+   * - `"first"` — use the first content line's indent as the
+   *   reference. Matches the `outdent` npm package.
    *
    * @default "common"
    */
   strategy?: "common" | "first";
 
   /**
-   * How leading/trailing blank lines are trimmed from the result.
+   * How to handle the blank lines at the start and end of the output
+   * (the newline after the opening backtick and the whitespace-only
+   * line before the closing one).
    *
-   * - `"all"` — remove all leading/trailing blank lines.
-   * - `"one"` — remove at most one leading and one trailing newline
-   *   (plus surrounding whitespace).
-   * - `"none"` — keep everything.
-   * - `{ leading, trailing }` — control each side independently.
+   * Pass a string for symmetric trimming, or an object to control
+   * each side independently:
+   *
+   * ```ts
+   * undent.with({ trim: { leading: "none", trailing: "all" } });
+   * ```
    *
    * @default "all"
    */
   trim?: TrimMode | TrimSides;
 
   /**
-   * Normalize newlines in **template segments** to this string.
+   * Replace newlines in template segments with this string.
    *
-   * Set to `null` to preserve original sequences. When set to a string,
-   * every `\n`, `\r\n`, and `\r` in template segments is replaced.
-   * Newlines inside interpolated values are never normalized.
+   * Set to `"\n"` to normalize all line endings to LF, or leave as
+   * `null` to preserve the original `\n` / `\r\n` / `\r` sequences.
+   * Newlines inside interpolated `${values}` are never touched.
    *
    * @default null
    */
   newline?: string | null;
 
   /**
-   * When `true`, every multi-line interpolated value has its subsequent
-   * lines padded to match the insertion column.
+   * Automatically align every multi-line interpolated value at its
+   * insertion column.
    *
-   * Individual values can also be wrapped with {@link align} or
-   * {@link embed} for per-value control, regardless of this setting.
+   * When `false` (default), only values wrapped with {@link align}
+   * or {@link embed} are aligned. Set to `true` to align all of them
+   * without wrapping each one individually.
    *
    * @default false
    */
   alignValues?: boolean;
 }
 
-/** The callable tag with attached helpers. */
+/**
+ * A callable template tag with configuration and helper methods.
+ *
+ * Use it directly as a tagged template, or call `.with()` to create
+ * a customized instance, or `.string()` to strip indent from a plain
+ * string.
+ *
+ * ```ts
+ * // As a template tag:
+ * undent`
+ *   Hello, world!
+ * `;
+ * // "Hello, world!"
+ *
+ * // As a string processor:
+ * undent.string("    indented text");
+ * // "indented text"
+ *
+ * // With custom options:
+ * const u = undent.with({ trim: "none" });
+ * ```
+ */
 export interface Undent {
-  /** Use as a tagged template literal. */
+  /** Strip structural indent from a tagged template literal. */
   (strings: TemplateStringsArray, ...values: unknown[]): string;
 
-  /** Create a new instance with different options. */
+  /**
+   * Create a new instance with different options. The current instance
+   * is never mutated — settings are inherited and overridden:
+   *
+   * ```ts
+   * const base = undent.with({ newline: "\n" });
+   * const strict = base.with({ trim: "none" }); // inherits newline
+   * ```
+   */
   with(options: UndentOptions): Undent;
 
   /**
-   * Dedent an arbitrary string using the safe all-lines algorithm.
+   * Strip indent from an arbitrary string (not a template literal).
    *
-   * Handles first-line indentation correctly, preserves original newline
-   * sequences by default, applies this instance's trimming rules, and
-   * normalizes newlines if configured.
+   * Uses the same trim and newline settings as the instance. Scans
+   * every line for the minimum indent and strips it:
+   *
+   * ```ts
+   * const sql = readFileSync("query.sql", "utf8");
+   * const clean = undent.string(sql);
+   * ```
    */
   string(input: string): string;
 
   /**
-   * Indent anchor marker. Place as the first interpolation on its own
-   * line to set the zero-indent reference point explicitly.
+   * Indent anchor symbol. Place as the first interpolation on its own
+   * line to set an explicit zero-indent reference point.
+   *
+   * Normally, `undent` detects the indent from the content lines
+   * automatically. The anchor overrides that detection and sets the
+   * anchor line's indentation as the baseline instead. This is
+   * primarily useful in code generation where you want explicit
+   * control over the output indentation.
    *
    * @example
    * ```ts
-   * import { undent } from "./mod.ts";
+   * import { undent } from "@okikio/undent";
    *
-   * const result = undent`
-   *   ${undent.indent}
-   *     This becomes column 0.
-   *       This stays indented 2 more.
-   * `;
-   * // "This becomes column 0.\n  This stays indented 2 more."
+   * class Generator {
+   *   render() {
+   *     return undent`
+   *       ${undent.indent}
+   *         This becomes column 0 in the output.
+   *           This keeps 2 spaces of indent.
+   *     `;
+   *     // "This becomes column 0 in the output.\n  This keeps 2 spaces of indent."
+   *   }
+   * }
    * ```
    */
   readonly indent: typeof indent;
 }
 
 /**
- * Internal resolved form of {@link UndentOptions} where every field
- * is required and trim sides are split into two fields.
+ * Fully resolved configuration where every field is required.
+ *
+ * This is what `undent` uses internally after merging defaults with
+ * user overrides. Exported for consumers building custom configuration
+ * pipelines via {@link resolveOptions}.
  */
 export interface ResolvedOptions {
   strategy: "common" | "first";
@@ -142,7 +231,29 @@ export interface ResolvedOptions {
 // Symbols, wrappers, and value markers
 // ==========================================================================
 
-/** Indent anchor symbol. Use `undent.indent` or import directly. */
+/**
+ * Indent anchor symbol.
+ *
+ * Place `${undent.indent}` (or import this symbol directly) as the
+ * first interpolation on its own line to override automatic indent
+ * detection. The anchor line's indentation becomes the zero-column
+ * reference point.
+ *
+ * @example
+ * ```ts
+ * import { undent, indent } from "@okikio/undent";
+ *
+ * // These are equivalent:
+ * undent`
+ *   ${undent.indent}
+ *     content
+ * `;
+ * undent`
+ *   ${indent}
+ *     content
+ * `;
+ * ```
+ */
 export const indent: unique symbol = Symbol("undent.indent");
 
 /** Brand for values wrapped by {@link align} or {@link embed}. */
@@ -174,9 +285,12 @@ const EMBED_CACHE = new Map<string, string>();
 const ALIGNED_TEXT_CACHE_MAX = 8;
 
 /**
- * A branded wrapper telling the join logic to pad subsequent lines of
+ * A branded wrapper that tells `undent` to pad subsequent lines of
  * this value to the insertion column. Created by {@link align} and
- * {@link embed}, consumed by the join functions.
+ * {@link embed}.
+ *
+ * You don't need to construct this directly — use the helper
+ * functions instead.
  */
 export interface AlignedValue {
   readonly [ALIGNED]: true;
@@ -188,18 +302,38 @@ interface InternalAlignedValue extends AlignedValue {
 }
 
 /**
- * Mark a value for alignment: subsequent lines of the stringified value
- * are padded to match the insertion column.
+ * Mark an interpolated value for column alignment.
+ *
+ * When a multi-line value is interpolated, its second and subsequent
+ * lines normally start at column 0 — breaking the visual structure.
+ * Wrapping it with `align()` pads those lines to match the insertion
+ * column:
+ *
+ * ```
+ * Without align():          With align():
+ *
+ * list:                     list:
+ *   - alpha                   - alpha
+ * - beta      ← col 0        - beta       ← stays at col 2
+ * - gamma                     - gamma
+ * end                       end
+ * ```
+ *
+ * @param value - Any value. It is stringified with `String(value)`.
+ * @returns A branded {@link AlignedValue} wrapper.
  *
  * @example
  * ```ts
- * const items = "- a\n- b\n- c";
+ * import { undent, align } from "@okikio/undent";
+ *
+ * const items = "- alpha\n- beta\n- gamma";
+ *
  * undent`
  *   list:
  *     ${align(items)}
- *   done
+ *   end
  * `;
- * // "list:\n  - a\n  - b\n  - c\ndone"
+ * // "list:\n  - alpha\n  - beta\n  - gamma\nend"
  * ```
  */
 export function align(value: unknown): AlignedValue {
@@ -207,20 +341,42 @@ export function align(value: unknown): AlignedValue {
 }
 
 /**
- * Strip a value's own indentation, then align it. Combines
- * {@link dedentString} with {@link align} in one step.
+ * Strip a value's own indentation, then mark it for alignment.
  *
- * Use when interpolating a snippet that carries baked-in indentation
- * from its original source location.
+ * Use this when the value carries baked-in indent from its source
+ * location (a SQL query written as an indented constant, a code block
+ * loaded from a file, etc.). `embed()` runs {@link dedentString} on
+ * the value first, then wraps the result with {@link align}:
+ *
+ * ```
+ * Input value (4-space indent):      After embed():
+ *
+ *     SELECT id, name                SELECT id, name
+ *     FROM   users                   FROM   users
+ *     WHERE  active = true           WHERE  active = true
+ * ```
+ *
+ * Results are cached (up to 256 entries), so repeated calls with the
+ * same string are essentially free.
+ *
+ * @param value - A string with baked-in indentation to strip.
+ * @returns A branded {@link AlignedValue} wrapper.
  *
  * @example
  * ```ts
- * const sql = "    SELECT *\n    FROM users\n    WHERE active";
+ * import { undent, embed } from "@okikio/undent";
+ *
+ * const sql = `
+ *     SELECT id, name
+ *     FROM   users
+ *     WHERE  active = true
+ * `;
+ *
  * undent`
  *   query:
  *     ${embed(sql)}
  * `;
- * // "query:\n  SELECT *\n  FROM users\n  WHERE active"
+ * // "query:\n  SELECT id, name\n  FROM   users\n  WHERE  active = true"
  * ```
  */
 export function embed(value: string): AlignedValue {
@@ -254,6 +410,14 @@ function dedentStringForEmbed(value: string): string {
 /**
  * Type guard: returns `true` if `value` was created by
  * {@link align} or {@link embed}.
+ *
+ * @example
+ * ```ts
+ * import { align, isAligned } from "@okikio/undent";
+ *
+ * isAligned(align("hello")); // true
+ * isAligned("hello");        // false
+ * ```
  */
 export function isAligned(value: unknown): value is AlignedValue {
   return typeof value === "object" && value !== null && ALIGNED in value;
@@ -263,7 +427,17 @@ export function isAligned(value: unknown): value is AlignedValue {
 // Public API: factory and pre-built instances
 // ==========================================================================
 
-/** Default resolved options. Exported for introspection and extension. */
+/**
+ * The default resolved options. Exported so you can inspect or extend
+ * the defaults when building custom configuration pipelines.
+ *
+ * ```ts
+ * import { DEFAULTS } from "@okikio/undent";
+ *
+ * console.log(DEFAULTS.strategy);    // "common"
+ * console.log(DEFAULTS.trimLeading); // "all"
+ * ```
+ */
 export const DEFAULTS: ResolvedOptions = {
   strategy: "common",
   trimLeading: "all",
@@ -273,26 +447,77 @@ export const DEFAULTS: ResolvedOptions = {
 };
 
 /**
- * Create a configured Undent instance from raw user options.
+ * Create a new `undent` instance with custom options.
+ *
+ * Starts from the default settings and applies your overrides. Use
+ * this when you want a standalone instance that doesn't inherit from
+ * an existing one (unlike `.with()`).
+ *
+ * @param options - Configuration overrides. Omitted fields use defaults.
+ * @returns A new {@link Undent} instance.
  *
  * @example
  * ```ts
- * const outdentLike = createUndent({ strategy: "first", trim: "one" });
+ * import { createUndent } from "@okikio/undent";
+ *
+ * // Matches the outdent npm package's behavior:
+ * const myTag = createUndent({ strategy: "first", trim: "one" });
+ *
+ * myTag`
+ *   first line sets the indent
+ *     deeper line stays deeper
+ * `;
+ * // "first line sets the indent\n  deeper line stays deeper"
  * ```
  */
 export function createUndent(options: UndentOptions = {}): Undent {
   return createUndentFromResolved(resolveOptions(DEFAULTS, options));
 }
 
-/** Default instance: common strategy, trim all, no normalization. */
+/**
+ * Default instance: strips the common indent across all lines and
+ * trims all leading/trailing blank lines.
+ *
+ * This is also the default export.
+ *
+ * @example
+ * ```ts
+ * import { undent } from "@okikio/undent";
+ *
+ * undent`
+ *   Hello, world!
+ * `;
+ * // "Hello, world!"
+ * ```
+ */
 export const undent: Undent = createUndentFromResolved(DEFAULTS);
 
-/** Alias using the common "dedent" terminology. */
+/**
+ * Convenience alias for {@link undent}.
+ *
+ * Some codebases use the name "dedent" by convention. This export
+ * lets you import whichever name feels natural:
+ *
+ * ```ts
+ * import { dedent } from "@okikio/undent";
+ * ```
+ */
 export const dedent: Undent = undent;
 
 /**
- * Pre-configured to match classic "outdent" defaults:
- * `strategy: "first"`, `trim: "one"`.
+ * Pre-configured instance that matches classic `outdent` npm behavior:
+ * first-line indent detection and trim-one.
+ *
+ * @example
+ * ```ts
+ * import { outdent } from "@okikio/undent";
+ *
+ * outdent`
+ *   first line sets the indent
+ *     deeper line stays deeper
+ * `;
+ * // "first line sets the indent\n  deeper line stays deeper"
+ * ```
  */
 export const outdent: Undent = createUndent({
   strategy: "first",
@@ -302,13 +527,12 @@ export const outdent: Undent = createUndent({
 export default undent;
 
 // ==========================================================================
-// Instance construction via Function.prototype.bind
+// Instance construction
 //
-// Each Undent instance is a bound function with methods attached.
-// The UndentState carries the resolved options, a self-reference for
-// anchor detection, and a WeakMap cache for processed template segments.
-// Using bind() avoids creating closures inside closures while keeping
-// each instance lightweight.
+// Each Undent instance is a plain function with `.with()`, `.string()`,
+// and `.indent` attached as properties. UndentState carries the resolved
+// options, a self-reference (for anchor detection), and a WeakMap cache
+// for processed template segments.
 // ==========================================================================
 
 interface UndentState {
@@ -368,14 +592,14 @@ function undentStringMethod(state: UndentState, input: string): string {
 }
 
 /**
- * The core tag function. Determines whether the call is anchored,
- * retrieves (or computes + caches) processed segments, then joins
- * with either the plain or alignment-aware strategy.
+ * Core tag function. Checks for an indent anchor, retrieves (or
+ * computes and caches) processed segments, then joins segments with
+ * values using either the plain or alignment-aware path.
  *
- * Optimized: when `alignValues` is false (the common case), we avoid
- * the O(n) `some(isAligned)` scan by checking alignment inline during
- * the join. If any aligned value is found, we restart with the
- * alignment-aware path.
+ * When `alignValues` is false (the common case), alignment is checked
+ * inline during the join loop. If a wrapped value is encountered
+ * mid-join, we restart with the alignment-aware path. This avoids a
+ * separate `some(isAligned)` scan on every call.
  */
 function undentTag(
   state: UndentState,
@@ -411,14 +635,31 @@ function undentTag(
 // ==========================================================================
 // Options resolution
 //
-// resolveOptions() takes a base (already-resolved) and a set of user
-// overrides, producing a new ResolvedOptions. This powers both
-// createUndent() (base = DEFAULTS) and .with() (base = parent's opts).
+// resolveOptions() takes a fully resolved base and user overrides,
+// producing a new ResolvedOptions. Powers both createUndent()
+// (base = DEFAULTS) and .with() (base = parent's options).
 // ==========================================================================
 
 /**
- * Merge user options onto a resolved base. Exported for consumers who
- * want to build custom configuration pipelines.
+ * Merge user options onto a resolved base, producing a new
+ * {@link ResolvedOptions}.
+ *
+ * This powers both {@link createUndent} (base = {@link DEFAULTS})
+ * and `.with()` (base = parent's options). Exported for consumers
+ * who want to build custom configuration pipelines.
+ *
+ * @param base - The fully resolved starting options.
+ * @param options - User overrides to apply on top of `base`.
+ * @returns A new {@link ResolvedOptions} with overrides merged in.
+ *
+ * @example
+ * ```ts
+ * import { resolveOptions, DEFAULTS } from "@okikio/undent";
+ *
+ * const opts = resolveOptions(DEFAULTS, { strategy: "first" });
+ * console.log(opts.strategy); // "first"
+ * console.log(opts.trimLeading); // "all" (inherited from DEFAULTS)
+ * ```
  */
 export function resolveOptions(
   base: ResolvedOptions,
@@ -452,20 +693,20 @@ export function resolveOptions(
 }
 
 // ==========================================================================
-// Template pipeline: cache → detect → strip → trim → normalize
+// Template pipeline: detect indent → strip → trim → normalize
 //
-// Template processing is split into phases that compose linearly.
-// getProcessedSegments orchestrates the pipeline and manages the
-// WeakMap cache. Each template literal has a frozen TemplateStringsArray
-// identity, so we cache processed segments keyed on that identity.
-// Anchored vs normal calls produce different results from the same
-// template, so we store both variants in a single CacheEntry.
+// Each template literal has a frozen TemplateStringsArray identity,
+// so processed segments are cached per call site. Anchored vs. normal
+// calls produce different results from the same template, so both
+// variants are stored in one CacheEntry.
 // ==========================================================================
 
 /**
- * Retrieve processed segments from cache, or compute them. The pipeline:
- * 1. If anchored, slice off strings[0] (consumed by the anchor marker).
- * 2. Detect indent level using the configured strategy.
+ * Retrieve processed segments from cache, or compute them.
+ *
+ * Pipeline:
+ * 1. If anchored, drop strings[0] (consumed by the anchor marker).
+ * 2. Detect indent level (common or first-line strategy).
  * 3. Strip indent, trim wrapper lines, normalize newlines.
  */
 function getProcessedSegments(
@@ -499,16 +740,17 @@ function getProcessedSegments(
 }
 
 /**
- * Detect whether this is an "anchored" call. An anchored call uses the
- * indent symbol (or the tag itself, for outdent migration) as the first
- * interpolation, placed on its own line, to set a custom zero-indent
- * reference point.
+ * Detect whether this is an "anchored" call.
+ *
+ * An anchored call uses the indent symbol (or the tag itself, for
+ * outdent backward compat) as the first interpolation, placed alone
+ * on its own line. This overrides automatic indent detection and uses
+ * the anchor line's indentation as the zero-column reference.
  *
  * Five conditions must all hold:
- * 1. There is at least one interpolated value.
- * 2. The first value is the `indent` symbol or the tag function itself.
- * 3. Everything in strings[0] is whitespace and newlines (no content
- *    before the marker).
+ * 1. At least one interpolated value exists.
+ * 2. The first value is the `indent` symbol or the tag itself.
+ * 3. Everything before the marker (strings[0]) is whitespace + newlines.
  * 4. strings[0] contains at least one newline.
  * 5. strings[1] starts with a newline or is empty (the marker is on
  *    its own line, not `text ${indent} more text`).
@@ -545,16 +787,15 @@ function isAnchoredCall(
 
 // --- Indent detection ----------------------------------------------------
 //
-// These functions scan template segments character-by-character to find
-// the indentation level. A "content line" is whitespace after a newline
-// that is followed by non-whitespace content (or, for non-last segments,
-// followed by the end of the segment where an interpolation sits).
+// Scans template segments character-by-character to find the indent
+// level. A "content line" starts after a newline, has some leading
+// whitespace, and is followed by non-whitespace (or end-of-segment
+// where an interpolation sits).
 //
-// The scanner works like a tiny state machine:
-//   1. Scan for a newline character (\n, \r, or \r\n).
+// The scanner is a tiny state machine:
+//   1. Find a newline (\n, \r, or \r\n).
 //   2. Count consecutive space/tab characters after it.
-//   3. Check what follows: content? another newline (blank line)? or
-//      end-of-segment (interpolation or template end)?
+//   3. Check what follows: content? another newline? end-of-segment?
 //
 // `endIsContent` is true for non-last segments because the segment
 // boundary means an interpolation expression follows.
@@ -822,54 +1063,59 @@ function processStrings(
 // ==========================================================================
 // String-safe dedent (arbitrary strings)
 //
-// Unlike the template pipeline (which can rely on structural guarantees
-// from template syntax), dedentString handles arbitrary input safely:
+// Unlike the template pipeline (which relies on the structural split
+// between segments and values), dedentString handles arbitrary input:
 //
-// 1. Split the input preserving newline sequences as separators.
-// 2. Find the true minimum indent across ALL non-blank lines (including
-//    the first line — templates skip it, strings don't).
-// 3. Slice that many characters off the front of each line. Only
-//    whitespace is ever removed because we measured whitespace.
-// 4. Trim wrapper blank lines using the configured mode.
-// 5. Rejoin with the ORIGINAL newline separators (preserving \n, \r\n,
-//    \r exactly as they appeared).
+// 1. Scan every non-blank line for the minimum leading whitespace.
+// 2. Strip that many characters from the front of each line.
+// 3. Trim wrapper blank lines using the configured mode.
+// 4. Preserve original newline sequences byte-for-byte.
 // ==========================================================================
 
 /**
- * Strip common leading indentation from an arbitrary string.
+ * Strip common leading indentation from a plain string.
  *
- * This is the safe algorithm used by `.string()` and {@link embed}.
- * It scans every non-blank line for the true minimum indent and only
- * ever removes whitespace. Exported for direct use when you need
- * dedenting without the template tag machinery.
+ * This is the algorithm behind `.string()` and {@link embed}. It scans
+ * every non-blank line for the smallest indent and strips it. Only
+ * whitespace is ever removed — content is guaranteed safe.
  *
- * Algorithm (two-pass, allocation-conscious):
+ * Two-pass approach:
  *
- * 1) Scan each logical line and compute `minIndent` across non-blank lines.
- *    - Leading spaces/tabs are counted.
- *    - Blank lines are ignored when computing the minimum.
+ * 1. **Scan** — walk each line, count leading spaces/tabs on non-blank
+ *    lines, track the minimum.
+ * 2. **Strip** — remove up to `minIndent` characters from each line.
+ *    The first line is sliced directly; remaining lines use a cached
+ *    regex so newline bytes are preserved.
+ * 3. **Trim** — apply leading/trailing blank-line trimming.
  *
- * 2) Remove up to `minIndent` indentation from each line.
- *    - First line is handled directly with `slice(...)`.
- *    - Remaining lines use a cached regex replace to keep newline bytes.
+ * Original newline sequences (`\n`, `\r\n`, `\r`) pass through
+ * unchanged. Lines with less indent than the minimum lose only what
+ * they have.
  *
- * 3) Apply leading/trailing trim mode (`all`, `one`, `none`).
- *    - Trim scanners return slice boundaries, then we slice once.
+ * @param input - The string to strip indent from.
+ * @param trimLeading - How to handle leading blank lines.
+ * @param trimTrailing - How to handle trailing blank lines.
+ * @returns The dedented string.
  *
- * Design goals:
- * - Never remove non-whitespace content.
- * - Preserve original newline sequences (`\n`, `\r\n`, `\r`).
- * - Keep hot-path allocations minimal.
+ * @example
+ * ```ts
+ * import { dedentString } from "@okikio/undent";
  *
- * Behavior contract:
- * - Removes at most `minIndent` leading spaces/tabs from each logical line.
- * - Lines with less than `minIndent` indentation lose only what they have.
- * - Blank lines stay blank (no synthesized whitespace).
- * - Newline bytes are copied through exactly (no normalization here).
+ * const clean = dedentString(`
+ *     SELECT *
+ *     FROM users
+ * `);
+ * // "SELECT *\nFROM users"
+ * ```
  *
- * @param input - The string to dedent.
- * @param trimLeading - How to trim leading blank lines (default: "all").
- * @param trimTrailing - How to trim trailing blank lines (default: "all").
+ * @example Edge case — mixed indent depths:
+ * ```ts
+ * import { dedentString } from "@okikio/undent";
+ *
+ * dedentString("    deep\n  shallow");
+ * // "  deep\nshallow"
+ * // 2 spaces stripped (the minimum); "deep" keeps its extra 2.
+ * ```
  */
 export function dedentString(
   input: string,
@@ -1085,15 +1331,15 @@ function trimTrailingBlankLinesAll(text: string): number {
 }
 
 // ==========================================================================
-// Joining: plain vs alignment-aware
+// Joining: plain vs. alignment-aware
 //
-// joinPlain is a simple interleave of segments and stringified values.
+// The plain path interleaves segments and stringified values.
 //
-// joinAligned computes a padding string for each value by measuring
-// the "column offset" — how many characters since the last newline
-// in the accumulated output. This padding is prepended to all lines
-// after the first in multi-line values, keeping them visually aligned
-// under their insertion point.
+// The alignment-aware path computes a padding string for each value
+// by measuring the column offset (characters since the last newline)
+// in the accumulated output. This padding is prepended to subsequent
+// lines in multi-line values, keeping them visually aligned under
+// their insertion point.
 // ==========================================================================
 
 /**
@@ -1102,13 +1348,11 @@ function trimTrailingBlankLinesAll(text: string): number {
  * Values wrapped by {@link align} or {@link embed} always get aligned.
  * When `alignAll` is true, unwrapped multi-line values are aligned too.
  *
- * Step by step:
- * 1) Start with the first static segment.
- * 2) For each interpolation, decide if alignment is required.
- * 3) If wrapped, compute insertion pad from current output column and
- *    reuse cached aligned output for repeated `(value, pad)` pairs.
- * 4) If unwrapped + `alignAll`, align only when value is multi-line.
- * 5) Append the next static segment and continue.
+ * For each interpolation:
+ * 1. Compute the insertion column from the current output.
+ * 2. If the value is wrapped, pad subsequent lines and cache the result.
+ * 3. If `alignAll` and the value is multi-line, pad subsequent lines.
+ * 4. Otherwise, stringify and concatenate directly.
  */
 function joinAligned(
   strings: ReadonlyArray<string>,
@@ -1140,28 +1384,25 @@ function joinAligned(
 }
 
 /**
- * Align subsequent lines by prefixing them with `pad`.
+ * Pad subsequent lines of a multi-line string with a prefix.
  *
- * - Keeps the first line unchanged.
- * - Preserves original newline sequences.
- * - Does NOT add padding to blank/whitespace-only lines (avoids trailing whitespace growth).
+ * The first line is left unchanged (it's already at the insertion
+ * point). Blank or whitespace-only lines are skipped to avoid
+ * producing trailing whitespace. Original newline sequences are
+ * preserved.
  *
- * Examples:
- * ```ts
- * alignText("a\nb\nc", "  ") === "a\n  b\n  c"
- * alignText("a\n\nc", "  ")  === "a\n\n  c"
- * alignText("a\r\nb\rc", "  ") === "a\r\n  b\r  c"
+ * ```
+ * alignText("a\nb\nc", "  ")   →  "a\n  b\n  c"
+ * alignText("a\n\nc", "  ")    →  "a\n\n  c"     (blank line skipped)
+ * alignText("a\r\nb\rc", "  ") →  "a\r\n  b\r  c"
  * ```
  *
- * The first line is left as-is (it's already at the insertion point).
- * Blank/whitespace-only lines stay empty so we don't produce trailing
- * whitespace. Original newline sequences are preserved.
- *
- * Uses a regex replacement callback instead of splitLines/rejoinLines,
- * avoiding two array allocations and the rejoin step entirely.
+ * Uses a character-level scanner instead of regex/split to minimize
+ * allocations on large inputs.
  *
  * @param text - The multi-line string to align.
- * @param pad - A string of spaces to prepend to lines 2+.
+ * @param pad - A string (usually spaces) to prepend to lines 2+.
+ * @returns The aligned string.
  */
 export function alignText(text: string, pad: string): string {
   if (pad.length === 0 || text.length === 0) {
@@ -1227,16 +1468,12 @@ function hasNewline(text: string): boolean {
 }
 
 /**
- * Align wrapped values with a small per-value cache keyed by `pad`.
+ * Return aligned text for a wrapped value, using a small per-value
+ * cache keyed by the pad string.
  *
- * Step by step:
- * 1) Return as-is for single-line text (no alignment needed).
- * 2) Check wrapped value's internal cache for this pad.
- * 3) On miss, compute `alignText(value, pad)`.
- * 4) Save result with bounded oldest-entry eviction.
- *
- * This targets hot `embed(...)` loops where both value and insertion
- * column are repeated across iterations.
+ * Targets hot `embed(...)` loops where both the value and insertion
+ * column repeat across iterations. Cache is bounded to
+ * {@link ALIGNED_TEXT_CACHE_MAX} entries per wrapped value.
  */
 function getAlignedWrappedText(value: AlignedValue, pad: string): string {
   const text = value.value;
@@ -1270,26 +1507,33 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
 // ==========================================================================
 // Shared primitives
 //
-// Small, focused functions used across both pipelines. Each operates
-// at the character level for newline handling or provides a reusable
-// split/join pattern.
+// Small functions for newline handling and split/join patterns, used
+// across both the template and string pipelines.
 // ==========================================================================
 
 /**
  * Split a string into lines and their separators, preserving the exact
  * newline sequences (`\n`, `\r\n`, `\r`).
  *
- * Given `"hello\r\nworld\nfoo"`, returns:
- * - lines: `["hello", "world", "foo"]`
- * - seps:  `["\r\n", "\n"]`
+ * Returns two arrays: `lines` (the content between newlines) and
+ * `seps` (the newline sequences). They satisfy
+ * `lines.length === seps.length + 1`, and the original string can be
+ * reconstructed with {@link rejoinLines}.
  *
- * The arrays satisfy `lines.length === seps.length + 1`, and the
- * original string can be reconstructed with {@link rejoinLines}.
- *
- * Uses a character-level scanner instead of regex split for performance.
  * Pre-counts newlines to allocate arrays exactly, avoiding repeated
- * array resizing. On 1K-line inputs this is ~2x faster than
- * `text.split(/(\r\n|\r|\n)/)`.
+ * resizing. On 1K-line inputs this is ~2x faster than regex split.
+ *
+ * @param text - The string to split.
+ * @returns An object with `lines` and `seps` arrays.
+ *
+ * @example
+ * ```ts
+ * import { splitLines } from "@okikio/undent";
+ *
+ * const { lines, seps } = splitLines("hello\r\nworld\nfoo");
+ * // lines: ["hello", "world", "foo"]
+ * // seps:  ["\r\n", "\n"]
+ * ```
  */
 export function splitLines(text: string): { lines: string[]; seps: string[] } {
   const len = text.length;
@@ -1338,11 +1582,22 @@ export function splitLines(text: string): { lines: string[]; seps: string[] } {
 }
 
 /**
- * Rejoin lines and separators produced by {@link splitLines}.
+ * Reconstruct a string from the output of {@link splitLines}.
  *
- * Uses an interleaved array with a single `join("")` call, which is
- * faster than `+=` concatenation for large inputs because V8's join
- * pre-computes total length and copies once.
+ * Interleaves lines and separators with a single `join("")` call,
+ * which V8 optimizes by pre-computing total length and copying once.
+ *
+ * @param lines - The content lines.
+ * @param seps - The newline separators between lines.
+ * @returns The reconstructed string.
+ *
+ * @example
+ * ```ts
+ * import { splitLines, rejoinLines } from "@okikio/undent";
+ *
+ * const { lines, seps } = splitLines("a\nb\nc");
+ * rejoinLines(lines, seps); // "a\nb\nc"
+ * ```
  */
 export function rejoinLines(
   lines: ReadonlyArray<string>,
@@ -1366,19 +1621,25 @@ export function rejoinLines(
 /**
  * Count characters from the last newline to the end of the string.
  *
- * This is the "column offset" — the position where the next character
- * would appear. Used by alignment to compute how many spaces to pad.
+ * This gives the "column offset" — the horizontal position where the
+ * next character would appear. Used internally by alignment to decide
+ * how many spaces to pad.
  *
- * Uses native `lastIndexOf` instead of a JS charcode loop for ~100x
- * speedup on long strings (V8 implements indexOf/lastIndexOf in C++).
+ * Uses `lastIndexOf` (implemented in C++ by V8) instead of a charcode
+ * loop for ~100x speedup on long strings.
  *
- * Column offset = number of characters after the final newline sequence.
+ * @param text - The string to measure.
+ * @returns The number of characters after the final newline, or the
+ *   full string length if there are no newlines.
  *
- * Examples:
- * - "abc\n  "      => 2
- * - "abc\r\n    "  => 4
- * - "abc\r  "      => 2
- * - "abc\n"        => 0
+ * @example
+ * ```ts
+ * import { columnOffset } from "@okikio/undent";
+ *
+ * columnOffset("abc\n  ");    // 2
+ * columnOffset("abc\r\n    "); // 4
+ * columnOffset("no newline");  // 10
+ * ```
  */
 export function columnOffset(text: string): number {
   const len = text.length;
@@ -1399,12 +1660,16 @@ export function columnOffset(text: string): number {
 }
 
 /**
- * Return the byte length of a newline sequence at position `i`, or 0.
- * Recognizes `\n` (1), `\r\n` (2), and `\r` (1).
- * - `\n` => 1
- * - `\r\n` => 2
- * - `\r` => 1
- * - otherwise => 0
+ * Return the byte length of a newline sequence at position `i`.
+ *
+ * - `\n` → 1
+ * - `\r\n` → 2
+ * - `\r` → 1
+ * - anything else → 0
+ *
+ * @param text - The string to inspect.
+ * @param i - The character index to check.
+ * @returns `0`, `1`, or `2`.
  */
 export function newlineLengthAt(text: string, i: number): 0 | 1 | 2 {
   const c = text.charCodeAt(i);
