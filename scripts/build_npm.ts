@@ -34,7 +34,7 @@ await build({
   test: false,
 
   package: {
-    name: denoJson.name,      // "@okikio/undent"
+    name: denoJson.name, // "@okikio/undent"
     version: denoJson.version,
     description:
       "Strip source-code indentation from template literals and strings. Works in Deno, Node.js, Bun, and browsers.",
