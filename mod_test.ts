@@ -719,30 +719,30 @@ World
   // -------------------------------------------------------------------------
 
   describe("indent anchor", () => {
-    it("sets zero-indent reference from anchor position", () => {
+    it("content at anchor column becomes column 0", () => {
       const result = undent`
         ${undent.indent}
-          This is column 0
-            This is indented 2
+        This is column 0
+          This keeps 2 spaces
       `;
-      expect(result).toBe("This is column 0\n  This is indented 2");
+      expect(result).toBe("This is column 0\n  This keeps 2 spaces");
     });
 
-    it("works with deeper anchor indentation", () => {
+    it("content deeper than anchor preserves relative spacing", () => {
       const result = undent`
             ${undent.indent}
-              Anchor is deep
-                Even deeper
+              Two past anchor
+                Four past anchor
       `;
-      expect(result).toBe("Anchor is deep\n  Even deeper");
+      expect(result).toBe("  Two past anchor\n    Four past anchor");
     });
 
     it("works with interpolated values after anchor", () => {
       const name = "World";
       const result = undent`
         ${undent.indent}
-          Hello ${name}
-          Goodbye ${name}
+        Hello ${name}
+        Goodbye ${name}
       `;
       expect(result).toBe("Hello World\nGoodbye World");
     });
@@ -751,8 +751,8 @@ World
       const items = "- a\n- b";
       const result = undent`
         ${undent.indent}
-          list:
-            ${align(items)}
+        list:
+          ${align(items)}
       `;
       expect(result).toBe("list:\n  - a\n  - b");
     });
@@ -760,8 +760,8 @@ World
     it("accepts the tag itself as anchor (outdent compat)", () => {
       const result = undent`
         ${undent}
-          Anchored via self-reference
-            Indented more
+        Anchored via self-reference
+          Indented more
       `;
       expect(result).toBe("Anchored via self-reference\n  Indented more");
     });
@@ -769,7 +769,7 @@ World
     it("exported indent symbol works as anchor", () => {
       const result = undent`
         ${indent}
-          Using imported symbol
+        Using imported symbol
       `;
       expect(result).toBe("Using imported symbol");
     });
@@ -785,8 +785,8 @@ World
       const crlf = undent.with({ newline: "\r\n" });
       const result = crlf`
         ${crlf.indent}
-          first
-          second
+        first
+        second
       `;
       expect(result).toBe("first\r\nsecond");
     });
@@ -1085,9 +1085,9 @@ World
       const items = "- a\n- b\n- c";
       const result = undent`
         ${undent.indent}
-          list:
-            ${align(items)}
-          done
+        list:
+          ${align(items)}
+        done
       `;
       expect(result).toBe("list:\n  - a\n  - b\n  - c\ndone");
     });
@@ -1096,8 +1096,8 @@ World
       const sql = "    SELECT *\n    FROM users";
       const result = undent`
         ${undent.indent}
-          query:
-            ${embed(sql)}
+        query:
+          ${embed(sql)}
       `;
       expect(result).toBe("query:\n  SELECT *\n  FROM users");
     });
@@ -1169,8 +1169,8 @@ World
     it("matches outdent's self-reference anchor", () => {
       const result = undent`
         ${undent}
-          Anchored
-            More
+        Anchored
+          More
       `;
       expect(result).toBe("Anchored\n  More");
     });
@@ -2006,7 +2006,7 @@ World
     it("anchored vs non-anchored calls on different templates stay independent", () => {
       const anchored = undent`
         ${undent.indent}
-          Hello
+        Hello
       `;
       const normal = undent`
         Hello
