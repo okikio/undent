@@ -1,3 +1,11 @@
+## undent@0.2.1
+
+- 🐛 clarify output indentation issue in examples
+- 🐛 correct output indentation in examples
+- 🐛 add examples for core undent functionality and trim modes
+- 🐛 limit regex cache size to prevent unbounded growth
+- 🐛 revert Node.js version to 25 in publish workflow
+
 # Changelog
 
 All notable changes to [`@okikio/undent`](https://jsr.io/@okikio/undent) are
