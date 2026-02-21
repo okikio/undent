@@ -9,8 +9,15 @@
  * keeping any relative indentation you actually want.
  *
  * ```ts
- * import { undent } from "@okikio/undent";
+ * // Deno
+ * import { undent } from "jsr:@okikio/undent";
  *
+ * // Node / Bun (npm)
+ * // npm install @okikio/undent
+ * import { undent } from "@okikio/undent";
+ * ```
+ *
+ * ```ts
  * // Without undent — output has 4 unwanted leading spaces per line:
  * const bad = `
  *     Hello, world!
