@@ -150,7 +150,7 @@ fix: handle bare \r in splitLines
 feat: add embed helper for pre-indented values
 ```
 
-**`feat` for infrastructure additions** — `feat` means a user-visible API change
+**`build` for infrastructure additions** — `feat` means a user-visible API change
 and triggers a minor version bump. Build scripts, publish workflows, and
 developer tooling are infrastructure; package consumers never see them. Using
 `feat` here bumps the version for a change users cannot observe and adds a
