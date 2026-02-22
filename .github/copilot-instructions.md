@@ -13,12 +13,8 @@ entire public API lives in `mod.ts` — there is no separate build step and no
 other source files to edit.
 
 It does one thing: strip source-code indentation from template literals and
-strings. The exports fall into three groups:
-
-- **Tag functions** — `undent`, `dedent`, `outdent`, `createUndent`
-- **Value helpers** — `align`, `embed`, `isAligned`
-- **String/text utilities** — `dedentString`, `alignText`, `splitLines`,
-  `rejoinLines`, `columnOffset`, `newlineLengthAt`, `resolveOptions`, `DEFAULTS`
+strings. The full public API is in `mod.ts` — run `deno doc mod.ts` to see
+all exports.
 
 ## Commands
 
@@ -88,14 +84,6 @@ For complex logic, include:
 - Prefer explicit configuration when it materially changes behavior.
 - Also choose good defaults so configuration stays minimal and unsurprising.
 
-### Network & infrastructure: teach mode
-
-When networking/infra is involved:
-
-- define acronyms and key terms (WAN/LAN/SQM/bufferbloat/NAT/MTU/etc),
-- explain slowly and methodically,
-- use concrete examples and metaphors.
-
 ## Breaking changes
 
 When making a behavioral change, touch all four of these before closing the
@@ -134,9 +122,12 @@ When acting as an agent on multi-step work:
 - Do not store secrets, tokens, or private URLs in `.agents/memory/`
 - Keep scratch notes in `.agents/memory/SESSIONS/` (gitignored)
 
-## Where to look for more targeted rules
+## Where to look
 
-Targeted rules live under `.github/instructions/`:
+### Instructions (always-on rules, auto-loaded by `applyTo`)
+
+Targeted rules live under `.github/instructions/`. These are prescriptive —
+follow them whenever you work on a matching file.
 
 | File                                | Applies to                       |
 | ----------------------------------- | -------------------------------- |
@@ -147,4 +138,14 @@ Targeted rules live under `.github/instructions/`:
 | `benchmarking.instructions.md`      | `**/*_bench.ts`, `**/*bench*.ts` |
 | `changelog-commits.instructions.md` | `**` (all files)                 |
 | `pull-requests.instructions.md`     | `**` (all files)                 |
+| `code-review.instructions.md`       | `**` (all files)                 |
+
+### Guides (situational reference, read on demand)
+
+Reference material lives under `.agents/guides/`. These are descriptive —
+read them when the task calls for it, not necessarily on every edit.
+
+| File                    | When to read                                          |
+| ----------------------- | ----------------------------------------------------- |
+| `codebase-patterns.md`  | Before touching `mod.ts` — architecture, cache, paths |
 | `code-review.instructions.md`       | `**` (all files)                 |

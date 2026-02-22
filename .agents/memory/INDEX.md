@@ -17,3 +17,7 @@
 
 - [DECISIONS](DECISIONS/)
 - [CHECKLISTS](CHECKLISTS/)
+
+## Reference guides
+
+- [codebase-patterns](../../.agents/guides/codebase-patterns.md) — architecture, cache, processing paths in `mod.ts`
