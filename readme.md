@@ -505,8 +505,8 @@ interface TrimSides {
 ## Contributing
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
-for automated versioning and changelog generation via
-[`@roka/forge`](https://jsr.io/@roka/forge).
+for automated versioning, GitHub releases, and changelog generation via
+[`semantic-release`](https://semantic-release.gitbook.io/semantic-release/).
 
 | Prefix                       | Version effect |
 | ---------------------------- | -------------- |

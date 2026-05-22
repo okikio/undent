@@ -43,7 +43,8 @@ These are the commit patterns that make the log useless. Each one has a direct
 fix.
 
 **Typeless / formatless subjects** — if there is no `type:` prefix, tooling
-cannot categorise the commit and forge silently drops it from the changelog.
+cannot categorise the commit and release automation silently drops it from the
+changelog.
 
 ```
 # Bad — no type, nothing actionable
@@ -204,7 +205,7 @@ Ask these questions in order:
 **Hard rule:** if the change would make a user's code behave differently at
 runtime, it is `feat` or `fix` — never `refactor` or `chore`. Mislabeling a
 user-visible change as `refactor` silently drops it from the changelog and from
-forge's version calculation.
+release automation's version calculation.
 
 ### Subject line rules (Chris Beams)
 
@@ -277,10 +278,11 @@ Breaking changes must appear in the commit footer even when the type already
 uses `!`. Both the `!` in the subject and the `BREAKING CHANGE` footer are
 required so tooling reliably detects and surfaces the change.
 
-### How forge reads commits
+### How semantic-release reads commits
 
-This project uses `deno task forge` (`jsr:@roka/forge`) to calculate versions
-and generate changelogs. Forge reads conventional commits directly:
+This project uses `semantic-release` to calculate versions, create GitHub
+releases, and update `changelog.md` from Conventional Commits. The default
+rules for this repo are:
 
 - `fix` → patch version bump
 - `feat` → minor version bump
@@ -291,9 +293,9 @@ For a single-package repo, the scope can be omitted — `feat: add thing` works
 identically to `feat(undent): add thing`. Omit the scope to keep subjects
 concise unless you need to distinguish between multiple packages.
 
-**The commit subject becomes the changelog entry verbatim.** Forge extracts it
-as-is. There is no editing step between what you type and what users read, so
-subject line quality matters more than usual.
+**The commit subject drives the changelog entry.** `semantic-release` turns the
+commit subject and body into generated release notes, so subject line quality
+still matters because it becomes the raw material for what users read.
 
 ---
 
@@ -303,16 +305,16 @@ The changelog is a communication contract with users. It is not a byproduct of
 development. It is the primary artifact that tells people whether to upgrade,
 what will break, and whether the project is actively maintained.
 
-### Structure (managed by forge)
+### Structure (managed by semantic-release)
 
-`changelog.md` is generated and updated by `forge bump` — do not manually
-maintain version headers or `[Unreleased]` sections. Forge owns the file
-structure.
+`changelog.md` is generated and updated by `semantic-release` during the release
+workflow. Do not manually maintain version headers or `[Unreleased]` sections
+during normal release work.
 
 What you can and should do manually:
 
-- Edit entries after `forge bump` creates the PR to add context, group related
-  changes, or clarify impact where the raw commit subject is insufficient.
+- Edit historical entries when they need more context, grouping, or clarity.
+   Future releases will prepend new notes automatically.
 - Add `**Breaking:**` prefixes to breaking change entries if they need clearer
   callouts.
 - Add entries for any user-visible `chore`, `refactor`, or `perf` commits that
@@ -320,18 +322,18 @@ What you can and should do manually:
 
 ### Release workflow
 
-1. Preview pending changes: `deno task forge changelog`
-2. Bump version and open PR:
-   `GITHUB_TOKEN=$(gh auth token) deno task forge bump --release --pr`
-3. Review the generated PR — edit `changelog.md` entries where the raw commit
-   subject needs more context.
-4. Merge the PR.
-5. Create the GitHub release:
-   `GITHUB_TOKEN=$(gh auth token) deno task forge release`
-6. Publishing is automated — pushing a GitHub Release triggers `publish.yml`,
-   which publishes to **JSR** (`deno publish`) and **npm**
-   (`deno task build:npm` followed by `npm publish`) in parallel jobs. Both are
-   idempotent; re-running the workflow for an already-published version is safe.
+1. Merge release-worthy commits to `main` using Conventional Commit subjects.
+2. `publish.yml` runs `semantic-release` on pushes to `main`.
+3. When a release is warranted, `semantic-release` updates `deno.json` and
+   `changelog.md`, creates the release commit and tag, and publishes the GitHub
+   Release.
+4. The published release event triggers the same workflow's publish jobs, which
+   publish to **JSR** (`deno publish`) and **npm**
+   (`deno task build:npm` followed by `npm publish`) in parallel. Re-running a
+   publish job for an already-published version should be safe.
+5. If one registry publish fails after the GitHub Release already exists, use
+   the workflow's manual `publish-only` dispatch mode to retry the tagged
+   release.
 
    To publish manually:
    - JSR: `deno publish`
