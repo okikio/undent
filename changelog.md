@@ -1,3 +1,15 @@
+# [0.3.0](https://github.com/okikio/undent/compare/undent@0.2.1...undent@0.3.0) (2026-05-22)
+
+
+### Features
+
+* **unicode:** Add Unicode-aware alignment helpers ([35ca2d4](https://github.com/okikio/undent/commit/35ca2d4c9d44c46e3217a5ba0478004217835161))
+
+
+### Performance Improvements
+
+* **bench:** Expand hot-path benchmark coverage ([a54d039](https://github.com/okikio/undent/commit/a54d0397b087b2d17c581d296d4551249c5510d2))
+
 ## undent@0.2.1
 
 ### Fixed
