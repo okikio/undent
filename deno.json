@@ -19,7 +19,9 @@
   "lint": {
     "exclude": [
       "mod_bench.ts",
-      "*_test.ts"
+      "*_test.ts",
+      "scripts/",
+      "npm/"
     ]
   },
   "publish": {
