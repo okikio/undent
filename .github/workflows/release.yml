@@ -1,21 +1,20 @@
-# Creates a draft GitHub Release after every push to main.
+# Creates a GitHub Release after every push to main.
 #
 # What it does:
 #   - Checks whether the current commit's deno.json version is already
-#     tagged. If not, forge creates a draft release with:
+#     tagged. If not, forge creates a release with:
 #       • the version from deno.json as the tag (e.g. undent@0.2.0)
 #       • the changelog entries since the last release
 #       • a link to the JSR documentation
 #   - If the version is already released, forge exits cleanly (no-op).
 #
-# You review and publish the draft release in the GitHub UI (or via
-# `gh release edit --draft=false`). Publishing it triggers the `publish`
-# workflow which pushes to JSR.
+# Publishing the release triggers the `publish` workflow, which pushes to
+# JSR and npm automatically.
 #
 # Authentication:
 #   RELEASE_TOKEN must be a PAT with `contents: write`. The default
-#   GITHUB_TOKEN works for draft creation but won't trigger downstream
-#   workflows; a PAT avoids that limitation.
+#   GITHUB_TOKEN can create the release, but GitHub suppresses downstream
+#   workflow runs for events it creates; a PAT avoids that limitation.
 name: Release
 
 on:
@@ -28,7 +27,7 @@ permissions:
 
 jobs:
   release:
-    name: Create draft release
+    name: Create release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -48,7 +47,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Create draft release
-        run: deno task forge release @okikio/undent --draft --emoji
+      - name: Create release
+        run: deno task forge release @okikio/undent --emoji
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

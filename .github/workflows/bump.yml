@@ -7,7 +7,7 @@
 #   4. Opens a pull request with those changes for review.
 #
 # After merging the bump PR, the `release` workflow creates a GitHub
-# draft release automatically.
+# release automatically.
 #
 # Authentication:
 #   The default GITHUB_TOKEN cannot trigger CI on new PRs and may be

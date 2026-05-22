@@ -1,8 +1,8 @@
 # Publishes to JSR when a GitHub Release is published.
 #
 # Flow:
-#   bump.yml  →  merge PR  →  release.yml creates draft  →
-#   you review & publish the draft  →  this workflow fires
+#   bump.yml  →  merge PR  →  release.yml publishes release  →
+#   this workflow fires
 #
 # Authentication:
 #   Uses GitHub's OIDC token — no JSR secret needed. JSR exchanges the
@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "25"
+          node-version: "26"
           registry-url: "https://registry.npmjs.org"
 
       - name: Publish to npm
