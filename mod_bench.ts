@@ -23,6 +23,7 @@
  *   8.  Primitives — exported utilities in isolation
  *   9.  Pathological — worst-case inputs
  *  10.  Real-world scenarios — common usage patterns
+ *  11.  Curiosity — string-building microbenchmarks
  *
  * Memory regression tests live in mod_memory_test.ts and run as part
  * of `deno task test`.
@@ -49,6 +50,11 @@ import undent, {
   rejoinLines,
   splitLines,
 } from "./mod.ts";
+import {
+  createUnicodeColumnOffset,
+  unicodeColumnOffset,
+  visualColumnWidth,
+} from "./unicode.ts";
 
 // Competitors
 import npmDedent from "npm:dedent";
@@ -69,6 +75,19 @@ function makeLines(count: number, indent = "    "): string {
   return out.join("\n");
 }
 
+function makeLineScaleData(
+  min: number,
+  max: number,
+  indent = '    ',
+): Record<number, string> {
+  const out = Object.create(null) as Record<number, string>;
+  for (let size = min; size <= max; size *= 2) {
+    out[size] = makeLines(size, indent);
+  }
+
+  return out;
+}
+
 function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
   const strings: string[] = [];
   for (let i = 0; i < segmentCount; i++) {
@@ -78,6 +97,30 @@ function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
   return Object.assign([...strings], {
     raw: [...strings],
   }) as unknown as TemplateStringsArray;
+}
+
+/**
+ * Repeat a string with manual concatenation.
+ *
+ * This exists only for a curiosity benchmark comparing loop-based string
+ * building with the built-in `.repeat()` primitive.
+ */
+function repeatWithLoop(text: string, count: number): string {
+  let out = "";
+  for (let i = 0; i < count; i++) {
+    out += text;
+  }
+  return out;
+}
+
+/**
+ * Repeat a string with `Array(...).fill(...).join("")`.
+ *
+ * This is another common hand-written alternative to `.repeat()`, so the
+ * curiosity benchmark measures it alongside the manual loop.
+ */
+function repeatWithFillJoin(text: string, count: number): string {
+  return new Array<string>(count).fill(text).join('');
 }
 
 /**
@@ -110,17 +153,70 @@ function embedLike(
 
 // Pre-built data — allocated once, reused across iterations.
 const SMALL_10 = makeLines(10);
+const CLEAN_10 = makeLines(10, '');
+const CLEAN_100 = makeLines(100, '');
+const CLEAN_1K = makeLines(1_000, '');
+const CLEAN_50K = makeLines(50_000, '');
 const MED_100 = makeLines(100);
 const LARGE_1K = makeLines(1_000);
 const LARGE_5K = makeLines(5_000);
 const LARGE_10K = makeLines(10_000);
+const LARGE_50K = makeLines(50_000);
+
+const STRING_SCALE_MIN = 8;
+const STRING_SCALE_MAX = 16_384;
+const STRING_SCALE_INDENTED = makeLineScaleData(STRING_SCALE_MIN, STRING_SCALE_MAX);
+const STRING_SCALE_CLEAN = makeLineScaleData(STRING_SCALE_MIN, STRING_SCALE_MAX, '');
 
 const INDENTED_100 = makeLines(100, "        ");
 const INDENTED_1K = makeLines(1_000, "        ");
+const INDENTED_50K = makeLines(50_000, "        ");
+
+const SHORT_PLAIN = 'hello world';
+const SHORT_INDENTED = '    hello world';
+const PLAIN_LONG_LINE = 'x'.repeat(100_000);
 
 const ML_50 = Array.from({ length: 50 }, (_, i) => `item ${i}`).join("\n");
 const ML_500 = Array.from({ length: 500 }, (_, i) => `item ${i}`).join("\n");
 const ML_5K = Array.from({ length: 5_000 }, (_, i) => `item ${i}`).join("\n");
+const ML_500_MOSTLY_BLANK = Array.from(
+  { length: 500 },
+  (_, i) => i % 8 === 0 ? `item ${i}` : "",
+).join("\n");
+
+const UNICODE_CJK_500 = Array.from(
+  { length: 500 },
+  (_, i) => `項目${i} 界界`,
+).join("\n");
+const UNICODE_EMOJI_500 = Array.from(
+  { length: 500 },
+  (_, i) => `😀 item ${i}`,
+).join("\n");
+const UNICODE_COMBINING_500 = Array.from(
+  { length: 500 },
+  (_, i) => `e\u0301 item ${i}`,
+).join("\n");
+const UNICODE_TAB_HEAVY_500 = Array.from(
+  { length: 500 },
+  (_, i) => `\t列\t${i}`,
+).join("\n");
+const UNICODE_MIXED_COLUMN_LINE = 'prefix 界😀e\u0301\tΩ';
+
+// Preconfigure the Unicode-aware measurers once so the benchmark loop only
+// measures the alignment work, not repeated option normalization.
+const unicodeColumnOffsetDefault = createUnicodeColumnOffset();
+const unicodeColumnOffsetTabs = createUnicodeColumnOffset({
+  tabWidth: 4,
+  ambiguous: 'wide',
+});
+const undentAlignUnicode = undent.with({
+  alignValues: true,
+  columnOffset: unicodeColumnOffsetDefault,
+});
+const undentAlignUnicodeTabs = undent.with({
+  alignValues: true,
+  columnOffset: unicodeColumnOffsetTabs,
+});
 
 const DEEP_INDENT_100 = makeLines(100, " ".repeat(200));
 const ALL_BLANK_1K = Array.from({ length: 1000 }, () => "   ").join("\n");
@@ -129,6 +225,16 @@ const MIXED_INDENT_500 = Array.from(
   (_, i) => " ".repeat(i % 20) + `line ${i}`,
 ).join("\n");
 const LONG_LINE = "    " + "x".repeat(100_000);
+const MIXED_NEWLINES_1K = makeLines(500, "    ").replace(/\n/g, (_, i: number) =>
+  i % 3 === 0 ? "\r\n" : i % 3 === 1 ? "\r" : "\n") +
+  "\r\n" + makeLines(500, "    ");
+const TRIM_SAMPLE_STRING = "\n\n    alpha\n      beta\n\n";
+
+function makeInlineTSA(prefix: string): TemplateStringsArray {
+  return Object.assign([prefix, ""], {
+    raw: [prefix, ""],
+  }) as unknown as TemplateStringsArray;
+}
 
 // =========================================================================
 // 1. Competitor comparison — undent vs dedent vs outdent
@@ -250,7 +356,7 @@ barplot(() => {
 
 // Parameterized with computed parameters to prevent LICM.
 // deno-lint-ignore no-explicit-any
-bench(function* tag_N_interpolations(state: any) {
+bench('tag: $n interpolations (computed)', function* (state: any) {
   const n = state.get("n");
   const tsa = makeTSA(n);
   const vals = Array.from({ length: n }, (_, i) => String(i));
@@ -262,33 +368,199 @@ bench(function* tag_N_interpolations(state: any) {
       do_not_optimize(undent(tsa, ...freshVals));
     },
   };
-}).args("n", [10, 50, 100]);
+  }).range('n', 8, 128);
 
 // =========================================================================
 // 3. String algorithm — .string() scaling
 // =========================================================================
 
+// Hot-path string usage often looks much closer to an identity operation than
+// to a large formatting transform: a short single-line value arrives, callers
+// run `.string()` defensively, and the result should be as close as possible to
+// the cost of handing the original string through untouched.
+summary(() => {
+  bench('plain string baseline: short single-line', () => {
+    do_not_optimize(SHORT_PLAIN);
+  });
+
+  bench('undent.string hot path: short single-line', () => {
+    do_not_optimize(undent.string(SHORT_PLAIN));
+  });
+
+  bench('undent.string hot path: short indented single-line', () => {
+    do_not_optimize(undent.string(SHORT_INDENTED));
+  });
+
+  bench('dedent(string) hot path: short single-line', () => {
+    do_not_optimize(npmDedent(SHORT_PLAIN));
+  });
+
+  bench('outdent.string hot path: short single-line', () => {
+    do_not_optimize(npmOutdent.string(SHORT_PLAIN));
+  });
+});
+
+summary(() => {
+  bench('plain string baseline: short single-line ×1000', () => {
+    let last = '';
+    for (let i = 0; i < 1000; i++) {
+      last = SHORT_PLAIN;
+    }
+    do_not_optimize(last);
+  });
+
+  bench('undent.string hot path: short single-line ×1000', () => {
+    let last = '';
+    for (let i = 0; i < 1000; i++) {
+      last = undent.string(SHORT_PLAIN);
+    }
+    do_not_optimize(last);
+  });
+
+  bench('dedent(string) hot path: short single-line ×1000', () => {
+    let last = '';
+    for (let i = 0; i < 1000; i++) {
+      last = npmDedent(SHORT_PLAIN);
+    }
+    do_not_optimize(last);
+  });
+
+  bench('outdent.string hot path: short single-line ×1000', () => {
+    let last = '';
+    for (let i = 0; i < 1000; i++) {
+      last = npmOutdent.string(SHORT_PLAIN);
+    }
+    do_not_optimize(last);
+  });
+});
+
 lineplot(() => {
   // deno-lint-ignore no-explicit-any
-  bench(function* string_N_lines(state: any) {
-    const n = state.get("lines");
-    const data: Record<number, string> = {
-      10: SMALL_10,
-      100: MED_100,
-      1000: LARGE_1K,
-      5000: LARGE_5K,
-      10000: LARGE_10K,
+  bench('string: indented $lines lines', function* (state: any) {
+    const lines = state.get('lines');
+    const input = STRING_SCALE_INDENTED[lines]!;
+
+    yield {
+      [0]() {
+        return input;
+      },
+
+      bench(input: string) {
+        do_not_optimize(undent.string(input));
+      },
     };
-    const input = data[n]!;
-    yield () => do_not_optimize(undent.string(input));
-  }).args("lines", [10, 100, 1000, 5000, 10000]);
+  }).range('lines', STRING_SCALE_MIN, STRING_SCALE_MAX);
+
+  // Measure the multiline identity path separately so we can see whether the
+  // early-return fast path stays flat as inputs scale.
+  bench('string: clean pass-through $lines lines', function* (state: any) {
+    const lines = state.get('lines');
+    const input = STRING_SCALE_CLEAN[lines]!;
+
+    yield {
+      [0]() {
+        return input;
+      },
+
+      bench(input: string) {
+        do_not_optimize(undent.string(input));
+      },
+    };
+  }).range('lines', STRING_SCALE_MIN, STRING_SCALE_MAX);
+});
+
+summary(() => {
+  bench('plain string baseline: multiline 1K already clean', () => {
+    do_not_optimize(CLEAN_1K);
+  });
+
+  bench('undent.string pass-through: multiline 1K already clean', () => {
+    do_not_optimize(undent.string(CLEAN_1K));
+  });
+
+  bench('dedent(string) pass-through: multiline 1K already clean', () => {
+    do_not_optimize(npmDedent(CLEAN_1K));
+  });
+
+  bench('outdent.string pass-through: multiline 1K already clean', () => {
+    do_not_optimize(npmOutdent.string(CLEAN_1K));
+  });
+});
+
+summary(() => {
+  bench('plain string baseline: multiline 1K already clean ×100', () => {
+    let last = '';
+    for (let i = 0; i < 100; i++) {
+      last = CLEAN_1K;
+    }
+    do_not_optimize(last);
+  });
+
+  bench('undent.string pass-through: multiline 1K already clean ×100', () => {
+    let last = '';
+    for (let i = 0; i < 100; i++) {
+      last = undent.string(CLEAN_1K);
+    }
+    do_not_optimize(last);
+  });
 });
 
 bench("string: mixed newlines 1K", () => {
-  const mixed = makeLines(500, "    ").replace(/\n/g, (_, i: number) =>
-    i % 3 === 0 ? "\r\n" : i % 3 === 1 ? "\r" : "\n") +
-    "\r\n" + makeLines(500, "    ");
-  do_not_optimize(undent.string(mixed));
+  do_not_optimize(undent.string(MIXED_NEWLINES_1K));
+});
+
+// Large single-line strings are a practical hot path in code generation,
+// logging, serialization, and HTTP response assembly. These benchmarks show
+// how much overhead `.string()` adds above simply holding the original string.
+summary(() => {
+  bench('plain string baseline: 100K-char line', () => {
+    do_not_optimize(PLAIN_LONG_LINE);
+  }).gc('inner');
+
+  bench('undent.string large: 100K-char line plain', () => {
+    do_not_optimize(undent.string(PLAIN_LONG_LINE));
+  }).gc('inner');
+
+  bench('undent.string large: 100K-char line indented', () => {
+    do_not_optimize(undent.string(LONG_LINE));
+  }).gc('inner');
+
+  bench('dedent(string) large: 100K-char line plain', () => {
+    do_not_optimize(npmDedent(PLAIN_LONG_LINE));
+  }).gc('inner');
+
+  bench('outdent.string large: 100K-char line plain', () => {
+    do_not_optimize(npmOutdent.string(PLAIN_LONG_LINE));
+  }).gc('inner');
+});
+
+// Very large multi-line inputs matter for generated source files, embedded SQL,
+// and templated config blobs. These keep the side-by-side library comparison so
+// large-input regressions stay visible.
+summary(() => {
+  bench('undent.string huge: 50K lines already clean', () => {
+    do_not_optimize(undent.string(CLEAN_50K));
+  }).gc('inner');
+
+  bench('dedent(string) huge: 50K lines already clean', () => {
+    do_not_optimize(npmDedent(CLEAN_50K));
+  }).gc('inner');
+
+  bench('outdent.string huge: 50K lines already clean', () => {
+    do_not_optimize(npmOutdent.string(CLEAN_50K));
+  }).gc('inner');
+
+  bench('undent.string huge: 50K lines indented', () => {
+    do_not_optimize(undent.string(INDENTED_50K));
+  }).gc('inner');
+
+  bench('dedent(string) huge: 50K lines indented', () => {
+    do_not_optimize(npmDedent(INDENTED_50K));
+  }).gc('inner');
+
+  bench('outdent.string huge: 50K lines indented', () => {
+    do_not_optimize(npmOutdent.string(INDENTED_50K));
+  }).gc('inner');
 });
 
 // =========================================================================
@@ -399,6 +671,109 @@ bench("alignValues: 3 multi-line values", () => {
   `);
 });
 
+// Unicode-specific alignment benchmarks compare the default code-unit policy to
+// the opt-in visual-width path. Competitor baselines do not exist here because
+// dedent/outdent expose no equivalent Unicode column measurement hook.
+summary(() => {
+  const codeUnit = undent.with({ alignValues: true });
+
+  bench("alignValues columns: ASCII 500 code-unit", () => {
+    do_not_optimize(codeUnit`
+      header:
+        ${ML_500}
+    `);
+  }).gc("inner");
+
+  bench("alignValues columns: ASCII 500 unicode", () => {
+    do_not_optimize(undentAlignUnicode`
+      header:
+        ${ML_500}
+    `);
+  }).gc("inner");
+
+  bench("alignValues columns: CJK 500 unicode", () => {
+    do_not_optimize(undentAlignUnicode`
+      header:
+        ${UNICODE_CJK_500}
+    `);
+  }).gc("inner");
+
+  bench("alignValues columns: emoji 500 unicode", () => {
+    do_not_optimize(undentAlignUnicode`
+      header:
+        ${UNICODE_EMOJI_500}
+    `);
+  }).gc("inner");
+
+  bench("alignValues columns: combining 500 unicode", () => {
+    do_not_optimize(undentAlignUnicode`
+      header:
+        ${UNICODE_COMBINING_500}
+    `);
+  }).gc("inner");
+
+  bench("alignValues columns: tabs 500 unicode", () => {
+    do_not_optimize(undentAlignUnicodeTabs`
+      header:\t${UNICODE_TAB_HEAVY_500}
+    `);
+  }).gc("inner");
+});
+
+summary(() => {
+  bench("columnOffset: mixed unicode line", () => {
+    do_not_optimize(columnOffset(UNICODE_MIXED_COLUMN_LINE));
+  });
+
+  bench("unicodeColumnOffset: mixed unicode line", () => {
+    do_not_optimize(unicodeColumnOffsetDefault(UNICODE_MIXED_COLUMN_LINE));
+  });
+
+  bench("unicodeColumnOffset: tab-aware mixed line", () => {
+    do_not_optimize(unicodeColumnOffsetTabs(UNICODE_MIXED_COLUMN_LINE));
+  });
+
+  bench("visualColumnWidth: mixed unicode line", () => {
+    do_not_optimize(visualColumnWidth(UNICODE_MIXED_COLUMN_LINE));
+  });
+});
+
+summary(() => {
+  const multi = "x\ny";
+  const wrapped = align(multi);
+
+  bench("align branch: no wrapped values", () => {
+    do_not_optimize(undent`
+      first: ${multi}
+      second: ${multi}
+      third: ${multi}
+    `);
+  });
+
+  bench("align branch: wrapped first interpolation", () => {
+    do_not_optimize(undent`
+      first: ${wrapped}
+      second: ${multi}
+      third: ${multi}
+    `);
+  });
+
+  bench("align branch: wrapped middle interpolation", () => {
+    do_not_optimize(undent`
+      first: ${multi}
+      second: ${wrapped}
+      third: ${multi}
+    `);
+  });
+
+  bench("align branch: wrapped last interpolation", () => {
+    do_not_optimize(undent`
+      first: ${multi}
+      second: ${multi}
+      third: ${wrapped}
+    `);
+  });
+});
+
 // =========================================================================
 // 5. Configuration
 // =========================================================================
@@ -424,6 +799,103 @@ summary(() => {
   });
 });
 
+summary(() => {
+  const trimAll = undent;
+  const trimOne = undent.with({ trim: "one" });
+  const trimNone = undent.with({ trim: "none" });
+
+  bench("trim template: all", () => {
+    do_not_optimize(trimAll`
+
+      alpha
+        beta
+
+    `);
+  });
+
+  bench("trim template: one", () => {
+    do_not_optimize(trimOne`
+
+      alpha
+        beta
+
+    `);
+  });
+
+  bench("trim template: none", () => {
+    do_not_optimize(trimNone`
+
+      alpha
+        beta
+
+    `);
+  });
+});
+
+summary(() => {
+  const trimAll = undent;
+  const trimOne = undent.with({ trim: "one" });
+  const trimNone = undent.with({ trim: "none" });
+
+  bench("trim string: all", () => {
+    do_not_optimize(trimAll.string(TRIM_SAMPLE_STRING));
+  });
+
+  bench("trim string: one", () => {
+    do_not_optimize(trimOne.string(TRIM_SAMPLE_STRING));
+  });
+
+  bench("trim string: none", () => {
+    do_not_optimize(trimNone.string(TRIM_SAMPLE_STRING));
+  });
+});
+
+summary(() => {
+  const keep = undent;
+  const lf = undent.with({ newline: "\n" });
+  const crlf = undent.with({ newline: "\r\n" });
+
+  bench("newline string: preserve original", () => {
+    do_not_optimize(keep.string(MIXED_NEWLINES_1K));
+  }).gc("inner");
+
+  bench("newline string: normalize to LF", () => {
+    do_not_optimize(lf.string(MIXED_NEWLINES_1K));
+  }).gc("inner");
+
+  bench("newline string: normalize to CRLF", () => {
+    do_not_optimize(crlf.string(MIXED_NEWLINES_1K));
+  }).gc("inner");
+});
+
+summary(() => {
+  const common = undent;
+  const first = undent.with({ strategy: "first" });
+  const tsas = Array.from({ length: 100 }, () => {
+    const strings = [
+      "\n        first\n      second\n        third\n      fourth\n  ",
+    ];
+    return Object.assign([...strings], { raw: [...strings] }) as unknown as
+      TemplateStringsArray;
+  });
+
+  bench("strategy template: common cold path ×100", () => {
+    let last = "";
+    for (let i = 0; i < tsas.length; i++) {
+      last = common(tsas[i]!);
+    }
+    do_not_optimize(last);
+  });
+
+  bench("strategy template: first cold path ×100", () => {
+    let last = "";
+    for (let i = 0; i < tsas.length; i++) {
+      last = first(tsas[i]!);
+    }
+    do_not_optimize(last);
+  });
+});
+
 // =========================================================================
 // 6. Cache effectiveness
 // =========================================================================
@@ -445,6 +917,56 @@ summary(() => {
     for (let i = 0; i < 100; i++) {
       const tsa = makeTSA(2);
       last = undent(tsa, String(i));
+    }
+    do_not_optimize(last);
+  });
+});
+
+summary(() => {
+  const wrapped = align("alpha\nbeta\ngamma");
+  const sameColumnTsa = makeInlineTSA("padding: ");
+  const varyingColumnTsas = Array.from(
+    { length: 32 },
+    (_, i) => makeInlineTSA(`${" ".repeat(i)}pad: `),
+  );
+
+  bench("aligned cache: same wrapper same column ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(sameColumnTsa, wrapped);
+    }
+    do_not_optimize(last);
+  });
+
+  bench("aligned cache: same wrapper varying columns ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(varyingColumnTsas[i % varyingColumnTsas.length]!, wrapped);
+    }
+    do_not_optimize(last);
+  });
+});
+
+summary(() => {
+  bench("anchor cache: anchored hot path ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent`
+        ${undent.indent}
+        list:
+          ${i}
+      `;
+    }
+    do_not_optimize(last);
+  });
+
+  bench("anchor cache: auto-detect hot path ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent`
+        list:
+          ${i}
+      `;
     }
     do_not_optimize(last);
   });
@@ -676,16 +1198,105 @@ bench("alignText: 500 lines, 8-char pad", () => {
   do_not_optimize(alignText(ML_500, "        "));
 }).gc("inner");
 
+summary(() => {
+  bench("alignText: 500 lines mostly content", () => {
+    do_not_optimize(alignText(ML_500, "        "));
+  }).gc("inner");
+
+  bench("alignText: 500 lines mostly blank", () => {
+    do_not_optimize(alignText(ML_500_MOSTLY_BLANK, "        "));
+  }).gc("inner");
+});
+
 // deno-lint-ignore no-explicit-any
-bench(function* columnOffset_len(state: any) {
+bench('columnOffset: $len chars', function* (state: any) {
   const n = state.get("len");
   const s = "a".repeat(n / 2) + "\n" + "b".repeat(n / 2);
-  yield () => do_not_optimize(columnOffset(s));
-}).args("len", [100, 1000, 10000]);
+  yield {
+    [0]() {
+      return s;
+    },
+
+    bench(input: string) {
+      do_not_optimize(columnOffset(input));
+    },
+  };
+}).range('len', 128, 16_384);
 
 bench("dedentString: 1K lines", () => {
   do_not_optimize(dedentString(LARGE_1K));
 }).gc("inner");
+
+// Curiosity microbenchmark.
+//
+// This does not model an undent hot path directly. It exists to answer a
+// practical implementation question: when we need repeated padding or marker
+// strings, is a manual loop faster than the built-in `.repeat()` helper?
+summary(() => {
+  const chunk = "        ";
+  const count = 32;
+
+  bench("string repeat: .repeat() 8-char chunk ×32", () => {
+    do_not_optimize(chunk.repeat(count));
+  });
+
+  bench("string repeat: for loop 8-char chunk ×32", () => {
+    do_not_optimize(repeatWithLoop(chunk, count));
+  });
+
+  bench("string repeat: fill+join 8-char chunk ×32", () => {
+    do_not_optimize(repeatWithFillJoin(chunk, count));
+  });
+});
+
+summary(() => {
+  const chunk = "0123456789abcdef0123456789abcdef";
+  const count = 512;
+
+  bench("string repeat: .repeat() 32-char chunk ×512", () => {
+    do_not_optimize(chunk.repeat(count));
+  }).gc("inner");
+
+  bench("string repeat: for loop 32-char chunk ×512", () => {
+    do_not_optimize(repeatWithLoop(chunk, count));
+  }).gc("inner");
+
+  bench("string repeat: fill+join 32-char chunk ×512", () => {
+    do_not_optimize(repeatWithFillJoin(chunk, count));
+  }).gc("inner");
+});
+
+summary(() => {
+  const count = 32;
+
+  bench("space repeat: .repeat() ×32", () => {
+    do_not_optimize(' '.repeat(count));
+  });
+
+  bench("space repeat: for loop ×32", () => {
+    do_not_optimize(repeatWithLoop(' ', count));
+  });
+
+  bench("space repeat: fill+join ×32", () => {
+    do_not_optimize(repeatWithFillJoin(' ', count));
+  });
+});
+
+summary(() => {
+  const count = 512;
+
+  bench("space repeat: .repeat() ×512", () => {
+    do_not_optimize(' '.repeat(count));
+  }).gc("inner");
+
+  bench("space repeat: for loop ×512", () => {
+    do_not_optimize(repeatWithLoop(' ', count));
+  }).gc("inner");
+
+  bench("space repeat: fill+join ×512", () => {
+    do_not_optimize(repeatWithFillJoin(' ', count));
+  }).gc("inner");
+});
 
 // =========================================================================
 // 9. Pathological inputs
