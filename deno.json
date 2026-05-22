@@ -16,6 +16,12 @@
   "fmt": {
     "proseWrap": "preserve"
   },
+  "lint": {
+    "exclude": [
+      "mod_bench.ts",
+      "*_test.ts"
+    ]
+  },
   "publish": {
     "include": [
       "mod.ts",
