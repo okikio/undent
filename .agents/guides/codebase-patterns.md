@@ -79,10 +79,10 @@ entries) for repeated static snippets.
 
 ## `AlignedValue` per-value text cache
 
-Each `AlignedValue` carries a small bounded cache stored as a non-enumerable
-symbol property. It maps column positions to already-padded strings, so the
-same value used repeatedly at the same insertion column avoids re-padding on
-every call. Check `mod.ts` for the current cap.
+Aligned values use a small bounded `WeakMap` cache keyed by wrapper object.
+Each entry maps insertion pads to already-padded strings, so the same value
+used repeatedly at the same insertion column avoids re-padding on every call
+without mutating the public wrapper object. Check `mod.ts` for the current cap.
 
 ## Character code constants
 
@@ -108,9 +108,9 @@ Hot scanning loops use integer character codes instead of string methods:
 
 ## `columnOffset`
 
-Returns the number of leading whitespace characters (spaces + tabs) before
-the first non-whitespace character on a line. Returns `Infinity` for
-blank/whitespace-only lines (so they don't pull the minimum indent down).
+Returns the number of UTF-16 code units after the last newline sequence in a
+string. Alignment uses that insertion offset to decide how much padding to add
+to subsequent lines.
 
 ## `TrimMode` and `TrimSides`
 
