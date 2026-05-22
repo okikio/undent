@@ -17,10 +17,11 @@
 All notable changes to [`@okikio/undent`](https://jsr.io/@okikio/undent) are
 documented here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Versions and
-entries are managed automatically by [`@roka/forge`](https://jsr.io/@roka/forge)
+entries are managed automatically by
+[`semantic-release`](https://semantic-release.gitbook.io/semantic-release/)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
-<!-- forge appends new entries above this line -->
+<!-- semantic-release prepends new entries above this line -->
 
 ## undent@0.2.0
 

@@ -1,41 +1,89 @@
-# Publishes to JSR when a GitHub Release is published.
+# One-time setup before this workflow can release or publish:
+# - Link `okikio/undent` in the JSR package settings so `deno publish`
+#   can exchange GitHub OIDC credentials for a short-lived publish token.
+# - Add an npm automation or granular publish token as the `NPM_TOKEN`
+#   repository secret for the very first npm publish, because npm only exposes
+#   trusted publisher settings after the package exists.
+# - After the first npm publish succeeds, configure npm trusted publishing for
+#   this workflow and delete `NPM_TOKEN` if you do not want the bootstrap
+#   fallback to remain available.
 #
-# Flow:
-#   bump.yml  →  merge PR  →  release.yml publishes release  →
-#   this workflow fires
+# Release flow:
+#   push to main or manual release-and-publish dispatch
+#     -> semantic-release updates deno.json + changelog.md
+#     -> semantic-release creates the GitHub Release
+#     -> the published release event publishes the tagged commit to JSR and npm
 #
-# Authentication:
-#   Uses GitHub's OIDC token — no JSR secret needed. JSR exchanges the
-#   OIDC JWT for a short-lived publish token automatically, as long as
-#   the GitHub repo is linked in the JSR package settings.
+# Publish-only flow:
+#   published GitHub Release or manual publish-only dispatch
+#     -> publish the specified tag to JSR and npm
+#     -> or retry only npm / only JSR after a partial publish failure
 #
-#   Required JSR setup (one-time):
-#     jsr.io → @okikio/undent → Settings → GitHub Repository → link okikio/undent
-#
-# Safety:
-#   `deno publish` is idempotent — it exits cleanly if the version in
-#   deno.json is already published to JSR, so accidental re-runs are safe.
-name: Publish
+# A dedicated RELEASE_TOKEN is still required for semantic-release because the
+# default GITHUB_TOKEN does not trigger downstream release events reliably.
+name: Release and Publish
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose whether to create a release first or only publish an existing tag."
+        required: true
+        type: choice
+        default: release-and-publish
+        options:
+          - release-and-publish
+          - publish-only
+      tag:
+        description: "Existing tag to publish when action is publish-only."
+        required: false
+        type: string
+      target:
+        description: "Registry target for publish-only retries."
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - jsr
+          - npm
+      npm_auth:
+        description: "Authentication mode for npm publish-only retries."
+        required: true
+        type: choice
+        default: auto
+        options:
+          - auto
+          - trusted
+          - token
 
 permissions:
-  # id-token: write is required for JSR's OIDC publish flow.
-  # It mints a short-lived publish credential automatically — no secret needed.
+  contents: write
   id-token: write
-  contents: read
 
 jobs:
-  publish-jsr:
-    name: Publish to JSR
+  release:
+    name: Create GitHub release
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'release-and-publish')
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.detect.outputs.released }}
+      tag: ${{ steps.detect.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: denoland/setup-deno@v2
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26'
 
       - name: Cache Deno deps
         uses: actions/cache@v5
@@ -45,14 +93,154 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
+      - name: Configure git author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Record release tags before semantic-release
+        run: |
+          git fetch --tags
+          git tag -l 'undent@*' > /tmp/release-tags-before.txt
+
+      - name: Install semantic-release
+        run: |
+          npm install --global \
+            semantic-release \
+            @semantic-release/changelog \
+            @semantic-release/commit-analyzer \
+            @semantic-release/exec \
+            @semantic-release/git \
+            @semantic-release/github \
+            @semantic-release/release-notes-generator
+
+      - name: Create GitHub release
+        run: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Detect whether a new release was created
+        id: detect
+        run: |
+          git fetch --tags
+          BEFORE_FILE=/tmp/release-tags-before.txt
+
+          if [ ! -f "$BEFORE_FILE" ]; then
+            touch "$BEFORE_FILE"
+          fi
+
+          NEW_TAG=$(comm -13 \
+            <(sort -V "$BEFORE_FILE") \
+            <(git tag -l 'undent@*' | sort -V) | tail -n 1)
+
+          if [ -n "$NEW_TAG" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+
+  resolve-release:
+    name: Resolve publish target
+    needs:
+      - release
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      publish_jsr: ${{ steps.resolve.outputs.publish_jsr }}
+      publish_npm: ${{ steps.resolve.outputs.publish_npm }}
+      npm_auth: ${{ steps.resolve.outputs.npm_auth }}
+    steps:
+      - name: Select the release tag to publish
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_ACTION: ${{ inputs.action }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          DISPATCH_TARGET: ${{ inputs.target }}
+          DISPATCH_NPM_AUTH: ${{ inputs.npm_auth }}
+        run: |
+          TAG=''
+          TARGET='both'
+          NPM_AUTH='auto'
+
+          if [ "$EVENT_NAME" = 'release' ]; then
+            TAG="$RELEASE_TAG"
+          elif [ "$EVENT_NAME" = 'workflow_dispatch' ] && [ "$DISPATCH_ACTION" = 'publish-only' ]; then
+            TAG="$DISPATCH_TAG"
+            TARGET="$DISPATCH_TARGET"
+            NPM_AUTH="$DISPATCH_NPM_AUTH"
+          fi
+
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ] && [ "$DISPATCH_ACTION" = 'publish-only' ] && [ -z "$TAG" ]; then
+            echo 'Publish-only dispatch requires a tag input.' >&2
+            exit 1
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo 'should_publish=false' >> "$GITHUB_OUTPUT"
+            echo 'ref=' >> "$GITHUB_OUTPUT"
+            echo 'tag=' >> "$GITHUB_OUTPUT"
+            echo 'npm_auth=' >> "$GITHUB_OUTPUT"
+            echo 'publish_jsr=false' >> "$GITHUB_OUTPUT"
+            echo 'publish_npm=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo 'should_publish=true' >> "$GITHUB_OUTPUT"
+          echo "ref=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "npm_auth=$NPM_AUTH" >> "$GITHUB_OUTPUT"
+
+          if [ "$TARGET" = 'both' ] || [ "$TARGET" = 'jsr' ]; then
+            echo 'publish_jsr=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish_jsr=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$TARGET" = 'both' ] || [ "$TARGET" = 'npm' ]; then
+            echo 'publish_npm=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish_npm=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  publish-jsr:
+    name: Publish to JSR
+    needs:
+      - resolve-release
+    if: always() && needs.resolve-release.outputs.should_publish == 'true' && needs.resolve-release.outputs.publish_jsr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-release.outputs.ref }}
+
+      - uses: denoland/setup-deno@v2
+
       - name: Publish to JSR
         run: deno publish
 
   publish-npm:
     name: Publish to npm
+    needs:
+      - resolve-release
+    if: always() && needs.resolve-release.outputs.should_publish == 'true' && needs.resolve-release.outputs.publish_npm == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-release.outputs.ref }}
 
       - uses: denoland/setup-deno@v2
 
@@ -65,21 +253,57 @@ jobs:
             ${{ runner.os }}-deno-
 
       - name: Build npm package
-        # Compiles mod.ts → CJS + ESM, type-checks against Node types,
-        # and runs the test suite via Node.js before publishing.
         run: deno task build:npm
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "26"
-          registry-url: "https://registry.npmjs.org"
+          node-version: '26'
+          registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish to npm
-        # `npm publish` is idempotent when called with --ignore-scripts:
-        # it exits with a non-zero code for an already-published version,
-        # which we suppress with `|| true` so re-runs of the workflow are safe.
+      - name: Detect whether the npm package already exists
+        id: package
         run: |
-          cd npm
-          npm publish --access public || echo "Version already published — skipping."
+          PACKAGE_NAME=$(node -p "require('./npm/package.json').name")
+          if npm view "$PACKAGE_NAME" version > /dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select npm authentication mode
+        id: auth
+        env:
+          PACKAGE_EXISTS: ${{ steps.package.outputs.exists }}
+          REQUESTED_NPM_AUTH: ${{ needs.resolve-release.outputs.npm_auth }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          AUTH="$REQUESTED_NPM_AUTH"
+
+          if [ "$AUTH" = 'auto' ]; then
+            if [ "$PACKAGE_EXISTS" = 'true' ]; then
+              AUTH='trusted'
+            else
+              AUTH='token'
+            fi
+          fi
+
+          if [ "$AUTH" = 'token' ] && [ -z "$NPM_TOKEN" ]; then
+            echo 'NPM token publishing was selected, but the NPM_TOKEN secret is not configured.' >&2
+            exit 1
+          fi
+
+          echo "mode=$AUTH" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm with token bootstrap
+        if: steps.auth.outputs.mode == 'token'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd npm
+          npm publish --provenance --access public
+
+      - name: Publish to npm with trusted publishing
+        if: steps.auth.outputs.mode == 'trusted'
+        run: |
+          cd npm
+          npm publish --provenance --access public
