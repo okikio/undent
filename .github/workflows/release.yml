@@ -49,6 +49,6 @@ jobs:
             ${{ runner.os }}-deno-
 
       - name: Create draft release
-        run: deno task forge release --draft --emoji
+        run: deno task forge release @okikio/undent --draft --emoji
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
