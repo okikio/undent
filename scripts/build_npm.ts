@@ -14,7 +14,18 @@ import denoJson from "../deno.json" with { type: "json" };
 await emptyDir("./npm");
 
 await build({
-  entryPoints: ["./mod.ts"],
+  entryPoints: [
+    {
+      kind: "export",
+      name: ".",
+      path: "./mod.ts",
+    },
+    {
+      kind: "export",
+      name: "./unicode",
+      path: "./unicode.ts",
+    },
+  ],
   outDir: "./npm",
 
   // mod.ts uses no Deno-specific globals (no Deno.*, no std/ imports),
@@ -33,6 +44,15 @@ await build({
   // types. The authoritative test run happens via `deno task test` in CI,
   // which is the correct runtime for these tests.
   test: false,
+
+  // Do not publish declaration source maps.
+  // 
+  // They create long generated JSON strings in `*.d.ts.map` files.
+  // Socket flags those as "Long strings" because that pattern can also
+  // appear in packed or obfuscated malware. For this package, the maps
+  // are not needed because the npm package does not publish the original
+  // `mod.ts` source next to them anyway.
+  declarationMap: false,
 
   package: {
     name: denoJson.name, // "@okikio/undent"

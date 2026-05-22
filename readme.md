@@ -207,6 +207,12 @@ undent`
 // end
 ```
 
+By default, that insertion column is measured with JavaScript string offsets
+after the last newline. That is fast and stable for code generation, but it is
+not the same thing as visual width in a terminal or editor. Tabs, combining
+marks, emoji, and full-width characters can render at different visual columns
+than their UTF-16 length suggests.
+
 When the value itself carries baked-in indentation — a SQL snippet from another
 file, a code block from a constant — use `embed()`. It strips the value's own
 indentation first, then aligns it at the insertion column:
@@ -251,6 +257,31 @@ u`
 
 > `align()` and `embed()` always align regardless of the `alignValues` setting —
 > they're the per-value opt-in.
+
+### Unicode visual alignment
+
+If you need terminal-style Unicode alignment, opt into the separate Unicode
+helpers subpath instead of changing the default behavior for every caller:
+
+```ts
+import { undent } from "@okikio/undent";
+import { createUnicodeColumnOffset } from "@okikio/undent/unicode";
+
+const terminalUndent = undent.with({
+  alignValues: true,
+  columnOffset: createUnicodeColumnOffset({ tabWidth: 4 }),
+});
+
+terminalUndent`
+  label: 界 ${"alpha\nbeta"}
+`;
+// label: 界 alpha
+//          beta
+```
+
+This mode is still best-effort. Visual width depends on the renderer, font, and
+surrounding context, so `@okikio/undent/unicode` aims at common terminal-style
+output rather than browser-perfect layout.
 
 ### Trimming
 
@@ -438,11 +469,19 @@ preserved byte-for-byte.
 | `alignText(text, pad)`                             | Pad subsequent lines of text with a prefix string                          |
 | `splitLines(text)`                                 | Split a string preserving exact newline sequences                          |
 | `rejoinLines(lines, seps)`                         | Reconstruct a string from `splitLines` output                              |
-| `columnOffset(text)`                               | Count characters since the last newline (insertion column)                 |
+| `columnOffset(text)`                               | Count UTF-16 code units since the last newline (default alignment policy)  |
 | `newlineLengthAt(text, i)`                         | Length of the newline sequence at position `i` (0, 1, or 2)                |
 | `resolveOptions(base, overrides)`                  | Merge option objects for custom pipelines                                  |
 | `DEFAULTS`                                         | The default resolved options constant                                      |
 | `indent`                                           | Symbol for indent anchors                                                  |
+
+### Unicode subpath
+
+| Export                                  | Description                                                           |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `createUnicodeColumnOffset(options?)`   | Build a terminal-style Unicode-aware `columnOffset` function          |
+| `unicodeColumnOffset(text, options?)`   | Measure the last line of a string in visual columns                   |
+| `visualColumnWidth(text, options?)`     | Measure a single line in terminal-style display columns               |
 
 ### Options
 
@@ -452,6 +491,7 @@ interface UndentOptions {
   trim?: TrimMode | TrimSides; // How to trim wrapper lines (default: "all")
   newline?: string | null; // Normalize segment newlines (default: null)
   alignValues?: boolean; // Auto-align all multi-line values (default: false)
+  columnOffset?: (text: string) => number; // Measure alignment columns (default: columnOffset)
 }
 
 type TrimMode = "all" | "one" | "none";

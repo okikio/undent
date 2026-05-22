@@ -46,7 +46,9 @@
  * Both paths share the same guarantees: non-whitespace content is never
  * removed, newlines in interpolated values are never normalized, and
  * multi-line values can be aligned at their insertion column with
- * {@link align} or {@link embed}.
+ * {@link align} or {@link embed}. By default that insertion column is measured
+ * with {@link columnOffset}, and callers can override that policy with the
+ * `columnOffset` option when they need Unicode-aware visual alignment.
  *
  * @module
  */
@@ -80,6 +82,18 @@ export interface TrimSides {
   /** How to trim blank lines at the end of the output. */
   trailing?: TrimMode;
 }
+
+/**
+ * Measure the current insertion column for alignment.
+ *
+ * `undent` calls this with the output accumulated so far and expects the
+ * number of spaces to prepend before later lines of an aligned value.
+ *
+ * The default implementation is {@link columnOffset}, which counts UTF-16
+ * code units after the last newline. Override it when you need alignment to
+ * follow a different visual-width policy.
+ */
+export type ColumnOffsetFunction = (text: string) => number;
 
 /**
  * Options for configuring an `undent` instance.
@@ -142,6 +156,18 @@ export interface UndentOptions {
    * @default false
    */
   alignValues?: boolean;
+
+  /**
+   * Measure the insertion column used by {@link align}, {@link embed}, and
+   * {@link alignValues}.
+   *
+   * The default is {@link columnOffset}, which counts UTF-16 code units after
+   * the last newline. Override this when you need alignment to follow a custom
+   * display-width policy such as Unicode terminal columns.
+   *
+   * @default columnOffset
+   */
+  columnOffset?: ColumnOffsetFunction;
 }
 
 /**
@@ -261,6 +287,8 @@ export interface ResolvedOptions {
   newline: string | null;
   /** When `true`, every multi-line interpolated value is automatically aligned at its insertion column. */
   alignValues: boolean;
+  /** How to measure the insertion column used for alignment padding. */
+  columnOffset: ColumnOffsetFunction;
 }
 
 // ==========================================================================
@@ -307,8 +335,14 @@ export const indent: unique symbol = Symbol("undent.indent");
  */
 export const ALIGNED: unique symbol = Symbol("undent.aligned");
 
-/** Internal symbol for per-value aligned-text memoization. */
-const ALIGNED_TEXT_CACHE: unique symbol = Symbol("undent.alignedTextCache");
+/**
+ * Per-wrapper memoization for aligned text.
+ *
+ * We keep this cache outside the public wrapper object so rendering can reuse
+ * aligned output without mutating values returned by {@link align} or
+ * {@link embed}.
+ */
+const ALIGNED_TEXT_CACHE = new WeakMap<AlignedValue, Map<string, string>>();
 
 // Character codes used in hot loops.
 // Hex is compact for low-level scanning, so we document each value:
@@ -345,10 +379,6 @@ export interface AlignedValue {
   readonly [ALIGNED]: true;
   /** The stringified content, ready for insertion into the template output. */
   readonly value: string;
-}
-
-interface InternalAlignedValue extends AlignedValue {
-  [ALIGNED_TEXT_CACHE]?: Map<string, string>;
 }
 
 /**
@@ -494,6 +524,7 @@ export const DEFAULTS: ResolvedOptions = {
   trimTrailing: "all",
   newline: null,
   alignValues: false,
+  columnOffset,
 };
 
 /**
@@ -666,7 +697,7 @@ function undentTag(
 
   // Fast path: when alignValues is true, always use aligned join.
   if (state.opts.alignValues) {
-    return joinAligned(segments, effectiveValues, true);
+    return joinAligned(state.opts, segments, effectiveValues, true);
   }
 
   // Common path: try plain join, bail to aligned if we hit a wrapped value.
@@ -676,7 +707,7 @@ function undentTag(
     const raw = effectiveValues[i];
     if (typeof raw === "object" && raw !== null && ALIGNED in raw) {
       // Found an aligned value — switch to aligned join for entire template.
-      return joinAligned(segments, effectiveValues, false);
+      return joinAligned(state.opts, segments, effectiveValues, false);
     }
     out += String(raw) + (segments[i + 1] ?? "");
   }
@@ -722,6 +753,9 @@ export function resolveOptions(
   if (options.alignValues !== undefined) {
     resolved.alignValues = options.alignValues;
   }
+  if (options.columnOffset !== undefined) {
+    resolved.columnOffset = options.columnOffset;
+  }
 
   if (options.newline !== undefined) {
     if (options.newline === null) resolved.newline = null;
@@ -735,8 +769,8 @@ export function resolveOptions(
       resolved.trimLeading = options.trim;
       resolved.trimTrailing = options.trim;
     } else {
-      resolved.trimLeading = options.trim.leading ?? "all";
-      resolved.trimTrailing = options.trim.trailing ?? "all";
+      resolved.trimLeading = options.trim.leading ?? base.trimLeading;
+      resolved.trimTrailing = options.trim.trailing ?? base.trimTrailing;
     }
   }
 
@@ -778,7 +812,7 @@ function getProcessedSegments(
   if (cached) return cached;
 
   const effectiveStrings = anchored
-    ? Array.prototype.slice.call(strings, 1) as string[]
+    ? strings.slice(1)
     : strings;
 
   // When anchored, the anchor's column IS the indent level — content
@@ -1125,7 +1159,7 @@ function processStrings(
     if (
       i === 0 && i === last &&
       opts.trimLeading === "all" && opts.trimTrailing === "all" &&
-      s.length > 0 && s.trim().length === 0
+      s.length > 0 && isStructuralWhitespaceOnly(s)
     ) {
       s = "";
     }
@@ -1204,6 +1238,28 @@ export function dedentString(
 ): string {
   const len = input.length;
   if (len === 0) return "";
+  const mayTrimLeading = trimLeading !== "none" && hasLeadingBlankLine(input);
+  const mayTrimTrailing = trimTrailing !== "none" && hasTrailingBlankLine(input);
+
+  // Fast path for the common hot-path string case: a single logical line.
+  // In that shape, dedenting reduces to stripping leading spaces/tabs from the
+  // only content line. We can answer that by scanning the prefix instead of the
+  // whole string, which especially helps already-clean strings and very large
+  // single-line inputs.
+  if (input.indexOf("\n") === -1 && input.indexOf("\r") === -1) {
+    let firstNonWs = 0;
+    while (firstNonWs < len) {
+      const c = input.charCodeAt(firstNonWs);
+      if (c !== CC_SPACE && c !== CC_TAB) break;
+      firstNonWs++;
+    }
+
+    if (firstNonWs === len) {
+      return trimLeading === "all" && trimTrailing === "all" ? "" : input;
+    }
+
+    return firstNonWs === 0 ? input : input.slice(firstNonWs);
+  }
 
   // Pass 1: find minimum indent across non-blank lines.
   // Blank lines do not influence minIndent; they are structural only.
@@ -1223,6 +1279,13 @@ export function dedentString(
       const c = input.charCodeAt(i);
       if (c !== CC_LF && c !== CC_CR) {
         const ws = i - lineStart;
+        // Once any content line starts at column 0, the common indent is fixed
+        // at 0 for the whole string. If there are also no blank wrapper lines to
+        // trim, dedenting cannot change the input, so we can return it without a
+        // full second pass.
+        if (ws === 0 && !mayTrimLeading && !mayTrimTrailing) {
+          return input;
+        }
         if (ws < minIndent) {
           minIndent = ws;
           if (ws === 0) break; // Can't go lower.
@@ -1300,6 +1363,40 @@ export function dedentString(
   }
 
   return result;
+}
+
+/**
+ * Return true when the string starts with a blank line.
+ *
+ * A blank leading line is optional spaces/tabs followed by a newline sequence.
+ * This helper exists so dedentString() can cheaply decide whether trim work is
+ * even possible before it commits to a full multi-pass transformation.
+ */
+function hasLeadingBlankLine(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === CC_SPACE || c === CC_TAB) continue;
+    return c === CC_LF || c === CC_CR;
+  }
+
+  return false;
+}
+
+/**
+ * Return true when the string ends with a blank line.
+ *
+ * This is the trailing-edge mirror of hasLeadingBlankLine(). It scans backward
+ * through optional spaces/tabs and reports whether the first non-horizontal
+ * whitespace byte is a newline sequence.
+ */
+function hasTrailingBlankLine(text: string): boolean {
+  for (let i = text.length - 1; i >= 0; i--) {
+    const c = text.charCodeAt(i);
+    if (c === CC_SPACE || c === CC_TAB) continue;
+    return c === CC_LF || c === CC_CR;
+  }
+
+  return false;
 }
 
 /**
@@ -1435,6 +1532,7 @@ function trimTrailingBlankLinesAll(text: string): number {
  * 4. Otherwise, stringify and concatenate directly.
  */
 function joinAligned(
+  opts: ResolvedOptions,
   strings: ReadonlyArray<string>,
   values: ReadonlyArray<unknown>,
   alignAll: boolean,
@@ -1449,10 +1547,10 @@ function joinAligned(
     if (wrapped) {
       // Wrapped values always align. For hot loops with repeated values,
       // this path memoizes alignment by pad width and reuses results.
-      const pad = " ".repeat(columnOffset(out));
+      const pad = " ".repeat(opts.columnOffset(out));
       out += getAlignedWrappedText(raw, pad);
     } else if (alignAll && hasNewline(text)) {
-      out += alignText(text, " ".repeat(columnOffset(out)));
+      out += alignText(text, " ".repeat(opts.columnOffset(out)));
     } else {
       out += text;
     }
@@ -1564,12 +1662,34 @@ function hasNewline(text: string): boolean {
 }
 
 /**
- * Return aligned text for a wrapped value, using a small per-value
- * cache keyed by the pad string.
+ * Return true when text contains only structural whitespace.
  *
- * Targets hot `embed(...)` loops where both the value and insertion
- * column repeat across iterations. Cache is bounded to
- * {@link ALIGNED_TEXT_CACHE_MAX} entries per wrapped value.
+ * This helper is intentionally narrower than `String.prototype.trim()`. The
+ * template pipeline treats only spaces, tabs, and newline bytes as formatting
+ * characters, so Unicode whitespace such as NBSP should remain content.
+ */
+function isStructuralWhitespaceOnly(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== CC_SPACE && c !== CC_TAB && c !== CC_LF && c !== CC_CR) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Return aligned text for a wrapped value.
+ *
+ * Repeated `align(...)` and `embed(...)` calls often reuse the same wrapper at
+ * the same insertion column. This helper memoizes those padded results so hot
+ * loops can skip recomputing identical alignment work.
+ *
+ * > The cache is keyed by the pad string and capped at
+ * > {@link ALIGNED_TEXT_CACHE_MAX} entries per wrapped value. Keeping the
+ * > cache small preserves the common fast path without letting rarely repeated
+ * > columns grow memory use without bound.
  */
 function getAlignedWrappedText(value: AlignedValue, pad: string): string {
   const text = value.value;
@@ -1577,8 +1697,7 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
     return text;
   }
 
-  const internal = value as InternalAlignedValue;
-  let cache = internal[ALIGNED_TEXT_CACHE];
+  let cache = ALIGNED_TEXT_CACHE.get(value);
   if (cache) {
     const hit = cache.get(pad);
     if (hit !== undefined) return hit;
@@ -1588,7 +1707,7 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
 
   if (!cache) {
     cache = new Map<string, string>();
-    internal[ALIGNED_TEXT_CACHE] = cache;
+    ALIGNED_TEXT_CACHE.set(value, cache);
   }
 
   if (cache.size >= ALIGNED_TEXT_CACHE_MAX) {
@@ -1715,18 +1834,22 @@ export function rejoinLines(
 }
 
 /**
- * Count characters from the last newline to the end of the string.
+ * Count how far the output has advanced since the last newline.
  *
- * This gives the "column offset" — the horizontal position where the
- * next character would appear. Used internally by alignment to decide
- * how many spaces to pad.
+ * Alignment uses this insertion offset to decide how many spaces to add before
+ * later lines of a wrapped value.
+ *
+ * > This is a UTF-16 code-unit offset, not display width. That keeps the
+ * > helper fast and deterministic for string processing, but editors may show
+ * > a different visual column for tabs, emoji, combining marks, or full-width
+ * > characters.
  *
  * Uses `lastIndexOf` (implemented in C++ by V8) instead of a charcode
  * loop for ~100x speedup on long strings.
  *
  * @param text - The string to measure.
- * @returns The number of characters after the final newline, or the
- *   full string length if there are no newlines.
+ * @returns The number of UTF-16 code units after the final newline,
+ *   or the full string length if there are no newlines.
  *
  * @example Measuring the insertion column
  * ```ts

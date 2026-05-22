@@ -21,6 +21,7 @@ import undent, {
 } from "./mod.ts";
 import type {
   AlignedValue,
+  ColumnOffsetFunction,
   ResolvedOptions,
   TrimMode,
   TrimSides,
@@ -150,6 +151,11 @@ World
       const result = undent`Hello
         World`;
       expect(result).toBe("Hello\nWorld");
+    });
+
+    it("preserves non-structural Unicode whitespace", () => {
+      const result = undent`\u00A0`;
+      expect(result).toBe("\u00A0");
     });
   });
 
@@ -415,6 +421,17 @@ World
         `;
         expect(result).toBe("\r\nfirst\r\nsecond");
       });
+
+      it("inherits unspecified trim sides across chained .with() calls", () => {
+        const keep = undent.with({ trim: "none" });
+        const next = keep.with({ trim: { leading: "one" } });
+
+        const result = next`
+          Hello
+        `;
+
+        expect(result).toBe("Hello\n");
+      });
     });
 
     describe("alignValues option", () => {
@@ -482,6 +499,21 @@ World
           "class Foo {\n  greet() {\n    console.log('hi');\n  }\n\n  bye() {\n    console.log('bye');\n  }\n}",
         );
       });
+
+      it("uses a custom columnOffset function when aligning values", () => {
+        const doubleWidth: ColumnOffsetFunction = (text) =>
+          columnOffset(text) * 2;
+        const ua = undent.with({
+          alignValues: true,
+          columnOffset: doubleWidth,
+        });
+
+        const result = ua`
+          > ${"a\nb"}
+        `;
+
+        expect(result).toBe("> a\n    b");
+      });
     });
   });
 
@@ -537,6 +569,16 @@ World
     it("never destroys content (regression test)", () => {
       const result = undent.string("  hello\n    world\nfoo");
       expect(result).toBe("  hello\n    world\nfoo");
+    });
+
+    it("returns already-clean multi-line strings unchanged", () => {
+      const input = "alpha\nbeta\ngamma";
+      expect(undent.string(input)).toBe(input);
+    });
+
+    it("returns mixed-indent strings unchanged when one line is already at column 0", () => {
+      const input = "  hello\nworld\n  again";
+      expect(undent.string(input)).toBe(input);
     });
   });
 
@@ -910,6 +952,17 @@ World
           before ${align("")} after
         `;
         expect(result).toBe("before  after");
+      });
+
+      it("supports frozen aligned values", () => {
+        const value = Object.freeze(align("a\nb"));
+
+        const result = undent`
+          list:
+            ${value}
+        `;
+
+        expect(result).toBe("list:\n  a\n  b");
       });
 
       it("handles value with only newlines", () => {
@@ -1371,6 +1424,12 @@ World
       expect(result.strategy).toBe("first");
     });
 
+    it("merges columnOffset", () => {
+      const custom: ColumnOffsetFunction = (text) => columnOffset(text) + 1;
+      const result = resolveOptions(DEFAULTS, { columnOffset: custom });
+      expect(result.columnOffset).toBe(custom);
+    });
+
     it("merges trim string", () => {
       const result = resolveOptions(DEFAULTS, { trim: "none" });
       expect(result.trimLeading).toBe("none");
@@ -1417,6 +1476,7 @@ World
       expect(DEFAULTS.trimTrailing).toBe("all");
       expect(DEFAULTS.newline).toBe(null);
       expect(DEFAULTS.alignValues).toBe(false);
+      expect(DEFAULTS.columnOffset).toBe(columnOffset);
     });
   });
 
@@ -1472,6 +1532,11 @@ World
     it("AlignedValue is usable", () => {
       const a: AlignedValue = align("x");
       expect(isAligned(a)).toBe(true);
+    });
+
+    it("ColumnOffsetFunction is usable", () => {
+      const fn: ColumnOffsetFunction = columnOffset;
+      expect(fn('x\ny')).toBe(1);
     });
   });
 
@@ -2232,6 +2297,7 @@ World
         trimTrailing: "none",
         newline: "\r\n",
         alignValues: true,
+        columnOffset,
       };
       const result = resolveOptions(custom, {});
       expect(result).toEqual(custom);
