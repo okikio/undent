@@ -154,8 +154,28 @@ jobs:
       - name: Install locked dependencies
         run: deno task deps:ci
 
+      - name: Update deno.json with release version
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-publish.outputs.version }}
+        run: >-
+          deno eval
+          --allow-env=RELEASE_VERSION
+          --allow-read=deno.json
+          --allow-write=deno.json
+          'const releaseVersion = Deno.env.get("RELEASE_VERSION");
+          if (!releaseVersion) {
+            throw new Error("Expected RELEASE_VERSION to be set.");
+          }
+
+          const denoJson = JSON.parse(await Deno.readTextFile("deno.json"));
+          denoJson.version = releaseVersion;
+          await Deno.writeTextFile(
+            "deno.json",
+            `${JSON.stringify(denoJson, null, 2)}\n`,
+          );'
+
       - name: Publish to JSR
-        run: deno publish --set-version "${{ needs.resolve-publish.outputs.version }}"
+        run: deno publish
 
   publish-npm:
     name: Publish to npm
