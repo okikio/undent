@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/okikio/undent/compare/undent@0.3.1...undent@0.3.2) (2026-05-24)
+
+
+### Bug Fixes
+
+* **release:** Split release and publish workflows ([ec3540b](https://github.com/okikio/undent/commit/ec3540b156c39e815708fc7baedd20ca06fefe7b))
+
 ## [0.3.1](https://github.com/okikio/undent/compare/undent@0.3.0...undent@0.3.1) (2026-05-24)
 
 
