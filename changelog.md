@@ -1,3 +1,15 @@
+## [0.3.3](https://github.com/okikio/undent/compare/undent@0.3.2...undent@0.3.3) (2026-05-24)
+
+
+### Bug Fixes
+
+* **release:** Sync deno.json before publishing ([000d38d](https://github.com/okikio/undent/commit/000d38df4323c76525e038eaddd726efd731214d))
+
+
+### Reverts
+
+* **release:** Restore workflows from 0.3.2 release ([aade662](https://github.com/okikio/undent/commit/aade662e87ca50794b7872bb52cb6806f9ac9704))
+
 ## [0.3.2](https://github.com/okikio/undent/compare/undent@0.3.1...undent@0.3.2) (2026-05-24)
 
 
