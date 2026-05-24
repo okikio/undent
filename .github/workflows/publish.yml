@@ -159,9 +159,6 @@ jobs:
           RELEASE_VERSION: ${{ needs.resolve-publish.outputs.version }}
         run: >-
           deno eval
-          --allow-env=RELEASE_VERSION
-          --allow-read=deno.json
-          --allow-write=deno.json
           'const releaseVersion = Deno.env.get("RELEASE_VERSION");
           if (!releaseVersion) {
             throw new Error("Expected RELEASE_VERSION to be set.");
