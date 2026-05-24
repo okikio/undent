@@ -7,11 +7,17 @@ import {
 /**
  * # Unicode Alignment Helpers
  *
- * This module provides a renderer-aware companion to `columnOffset()` from the
- * root module. The default `undent` path measures alignment columns as UTF-16
- * code units because that is fast, deterministic, and a good fit for code
- * generation. The helpers here opt into a different trade-off: best-effort
- * terminal-style visual width.
+ * Use these helpers when plain JavaScript string length is not good enough for
+ * alignment.
+ *
+ * In the main `undent` path, alignment is measured the simple JavaScript way:
+ * count how much string data appears after the last newline. That is fast and
+ * predictable, and it works well for plain ASCII-heavy text.
+ *
+ * Unicode text is messier. Some characters take two columns in a terminal,
+ * some combine with the character before them, and some emoji are built from
+ * several code points that display as one visible symbol. The helpers here aim
+ * at that visual, terminal-style width instead.
  *
  * The measurement pipeline is:
  *
@@ -33,8 +39,9 @@ import {
  * - ambiguous-width ranges can be narrow or wide by option,
  * - everything else counts as one column.
  *
- * This is still not a universal truth for browsers or proportional fonts. It
- * is an opt-in approximation for common monospace terminal output.
+ * The result is still only an estimate. Browsers, fonts, and terminals do not
+ * all draw text the same way. These helpers are an opt-in best guess for common
+ * monospace terminal output.
  *
  * @module
  */
@@ -42,9 +49,8 @@ import {
 /**
  * The current visual column before measuring the next grapheme cluster.
  *
- * Width functions receive this so they can implement stateful rules such as
- * tab stops, where the width of `"\t"` depends on the current column rather
- * than on the grapheme alone.
+ * A width function gets this value so it can answer questions like: "if I am
+ * currently at column 6, how wide should a tab be right now?"
  */
 export interface UnicodeColumnWidthState {
   /** The current visual column before the grapheme is measured. */
@@ -54,8 +60,12 @@ export interface UnicodeColumnWidthState {
 /**
  * Measure the visual width of one grapheme cluster.
  *
- * Return `undefined` to fall back to the built-in best-effort width rules.
- * Any defined return value must be a non-negative integer.
+ * A grapheme cluster is the closest thing to one visible character. Sometimes
+ * that really is one code point. Sometimes it is a base letter plus a
+ * combining mark, or a multi-code-point emoji sequence.
+ *
+ * Return `undefined` to let the built-in rules decide the width. Any defined
+ * return value must be a non-negative integer.
  */
 export type UnicodeWidthFunction = (
   grapheme: string,
@@ -63,11 +73,10 @@ export type UnicodeWidthFunction = (
 ) => number | undefined;
 
 /**
- * Options for the Unicode-aware column measurement helpers in this module.
+ * Options for the Unicode-aware column measurement helpers.
  *
- * These helpers are designed for terminal-style monospace alignment. They are
- * intentionally opt-in because visual width depends on the renderer, font, and
- * surrounding context.
+ * These helpers are meant for terminal-style monospace alignment. They are
+ * opt-in because visual width depends on where the text is shown.
  */
 export interface UnicodeColumnOffsetOptions {
   /**
@@ -93,8 +102,8 @@ export interface UnicodeColumnOffsetOptions {
   /**
    * Override the width of specific grapheme clusters.
    *
-   * This is the escape hatch for callers who know their actual display target.
-   * Return `undefined` to fall back to the built-in best-effort rules.
+   * Use this when you know more about your display target than the built-in
+   * rules do. Return `undefined` to fall back to the default behavior.
    */
   widthOf?: UnicodeWidthFunction;
 }
@@ -152,7 +161,7 @@ export interface GraphemeSegment {
   readonly segment: string;
 }
 
-/** Minimal grapheme-segmentation interface used by this module. */
+/** Minimal grapheme-segmentation interface used by the Unicode helpers. */
 export interface GraphemeSegmenter {
   /** Segment the input string into grapheme-cluster records. */
   segment(input: string): Iterable<GraphemeSegment>;
@@ -161,8 +170,10 @@ export interface GraphemeSegmenter {
 /**
  * Structural type for runtimes that expose `Intl.Segmenter`.
  *
- * dnt's Node type environment does not include that API, so the module uses a
- * structural type instead of referencing `Intl.Segmenter` directly.
+ * We only need one small part of `Intl`: the `Segmenter` constructor. This
+ * local type lets the module describe just that part, which keeps things
+ * working even in environments whose bundled types do not expose
+ * `Intl.Segmenter` directly.
  */
 export type IntlWithSegmenter = typeof Intl & {
   Segmenter?: new (
@@ -191,7 +202,8 @@ let graphemeSegmenter: GraphemeSegmenter | null | undefined;
  * Create a `columnOffset` function that measures terminal-style Unicode width.
  *
  * Use this with `undent.with({ columnOffset })` when later lines of aligned
- * values should follow visual columns instead of raw UTF-16 code units.
+ * values should line up the way a terminal is likely to draw them, rather than
+ * by raw JavaScript string length.
  *
  * @example Aligning with terminal-style Unicode columns
  * ```ts
@@ -232,9 +244,10 @@ export function createUnicodeColumnOffset(
 /**
  * Measure the visual insertion column after the final newline in `text`.
  *
- * This is the Unicode-aware companion to `columnOffset()` from the root module.
- * It measures the last line in terminal-style display columns instead of UTF-16
- * code units.
+ * `columnOffset()` from the root module counts raw JavaScript string units.
+ * `unicodeColumnOffset()` measures the last line in terminal-style display
+ * columns instead, because alignment only cares about the insertion point
+ * after the final newline.
  *
  * @example Measuring the last line of a string with wide characters
  * ```ts
@@ -256,12 +269,13 @@ export function unicodeColumnOffset(
 /**
  * Measure the terminal-style visual width of a single line.
  *
- * The function walks grapheme clusters, not raw UTF-16 code units. That keeps
- * combining sequences and emoji clusters together before width rules are
- * applied.
+ * Measurement follows what a reader is likely to see, not just how many
+ * JavaScript string units are present. The loop walks grapheme clusters so things
+ * like combining accents and multi-part emoji stay together before width rules
+ * are applied.
  *
- * This is still a best-effort estimate. Browser layout and proportional fonts
- * can render the same text with different visual widths.
+ * It is still only a best-effort estimate. Different renderers can draw the
+ * same text at different widths.
  *
  * @example Measuring combining marks as one visible cell
  * ```ts
@@ -293,8 +307,8 @@ export function visualColumnWidth(
 /**
  * Normalize caller options once so the measurement loop can stay simple.
  *
- * Validation happens here instead of in the hot path so repeated calls from a
- * preconfigured `createUnicodeColumnOffset()` instance only pay the check once.
+ * Validation happens here so repeated measurements can focus on width work
+ * instead of re-checking the same options over and over.
  */
 export function resolveUnicodeColumnOffsetOptions(
   options: UnicodeColumnOffsetOptions,
@@ -323,7 +337,8 @@ export function sliceAfterLastNewline(text: string): string {
 /**
  * Measure one grapheme cluster with the built-in width rules.
  *
- * The order matters because some rules intentionally short-circuit others:
+ * Read the built-in rules as a small checklist. Each question runs in order,
+ * and the first matching rule decides the width:
  *
  * ```text
  * grapheme
@@ -340,8 +355,8 @@ export function sliceAfterLastNewline(text: string): string {
  *   -> otherwise           => 0
  * ```
  *
- * This keeps combining marks, variation selectors, and ZWJ glue from adding
- * width on top of the base grapheme they modify.
+ * That order prevents helper code points, such as combining marks or joiners,
+ * from adding width on top of the visible character they belong to.
  */
 export function defaultGraphemeWidth(
   grapheme: string,
@@ -393,10 +408,10 @@ export function defaultGraphemeWidth(
 /**
  * Iterate text as grapheme clusters when the runtime supports it.
  *
- * `Intl.Segmenter` is the strongest available platform primitive because it
- * follows Unicode grapheme-boundary rules. The fallback uses `for...of`, which
- * still iterates code points instead of UTF-16 code units, but it cannot keep
- * multi-code-point emoji sequences together.
+ * If the runtime has `Intl.Segmenter`, we use it because it understands where
+ * one visible character ends and the next begins. If not, we fall back to
+ * `for...of`, which is still better than raw UTF-16 indexing but cannot keep
+ * every multi-part emoji sequence together.
  */
 export function* graphemes(text: string): Iterable<string> {
   const segmenter = getGraphemeSegmenter();
@@ -415,8 +430,9 @@ export function* graphemes(text: string): Iterable<string> {
 /**
  * Lazily create and memoize the grapheme segmenter.
  *
- * Importing the module should stay side-effect free and cheap. The segmenter is
- * therefore constructed on first use instead of at module initialization time.
+ * Importing the module should stay cheap, so we do not build the segmenter up
+ * front. We create it the first time someone needs it, then keep reusing that
+ * same instance.
  */
 export function getGraphemeSegmenter(): GraphemeSegmenter | null {
   if (graphemeSegmenter !== undefined) {
@@ -433,8 +449,9 @@ export function getGraphemeSegmenter(): GraphemeSegmenter | null {
 /**
  * Validate widths returned by `widthOf(...)`.
  *
- * Custom width hooks are part of the public escape hatch, so failures should be
- * loud and specific instead of silently coercing odd values.
+ * Custom width hooks are allowed to override the built-in rules, so bad return
+ * values should fail loudly instead of being silently coerced into something
+ * surprising.
  */
 export function validateWidth(width: number, source: string): number {
   if (!Number.isInteger(width) || width < 0) {
@@ -460,9 +477,9 @@ export function validateTabWidth(tabWidth: number): void {
 /**
  * Return true when every code point in the grapheme is a control character.
  *
- * We only return zero width for a whole grapheme when it contains no visible
- * base character at all. A visible character followed by controls is handled by
- * the wider default grapheme logic instead of being dropped here.
+ * We only treat the whole grapheme as zero-width when nothing visible is in
+ * it. If a visible character is present, the wider grapheme-width logic keeps
+ * handling it.
  */
 export function isControlOnly(grapheme: string): boolean {
   for (const char of grapheme) {
@@ -515,8 +532,9 @@ export function isZeroWidthCodePoint(codePoint: number): boolean {
 /**
  * Check East Asian wide/fullwidth ranges with a binary search.
  *
- * A flat range table is much easier to audit and extend than a long boolean
- * expression, and binary search keeps the lookup cost predictable.
+ * The data is stored as sorted ranges instead of a huge hand-written list of
+ * comparisons. Binary search gives us a fast lookup without making the table
+ * hard to audit.
  */
 export function isWideCodePoint(codePoint: number): boolean {
   return isCodePointInRanges(codePoint, EAST_ASIAN_WIDE_RANGES);
@@ -532,9 +550,8 @@ export function isAmbiguousWidthCodePoint(codePoint: number): boolean {
 /**
  * Return true when `codePoint` falls inside any `[start, end]` range.
  *
- * The tables are sorted by start position, so binary search finds matches in
- * `O(log n)` time without allocating or scanning the full list on every code
- * point.
+ * The ranges are sorted, so we can repeatedly cut the search space in half
+ * instead of checking every entry one by one.
  */
 export function isCodePointInRanges(
   codePoint: number,

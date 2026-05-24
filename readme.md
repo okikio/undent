@@ -454,6 +454,238 @@ structure to exploit. Instead, `undent` scans every line for the minimum indent,
 strips it, and trims wrapper blank lines. Original newline sequences are
 preserved byte-for-byte.
 
+## Why repeated renders stay fast without mixing layouts
+
+`undent` caches repeated work so common rendering paths stay fast without
+mixing together results that belong to different layouts.
+
+That matters most in the boring, repetitive cases that show up in real code:
+
+- the same tagged template runs inside a loop
+- the same SQL snippet is embedded in several places
+- the same multi-line value is rendered at the same few columns again and again
+
+The benefit is simple: repeated renders avoid recomputing the same stripped or
+aligned text. The design question is the important part: what gets reused, and
+what must stay separate so one render does not affect another?
+
+### Different kinds of input reuse different cached work
+
+One tagged template call site is the easiest place to see the benefit:
+
+```ts
+for (const name of names) {
+  undent`
+    Hello, ${name}!
+    Welcome aboard.
+  `;
+}
+```
+
+JavaScript reuses the same `TemplateStringsArray` for that exact template call
+site. Only the `${name}` value changes from one loop iteration to the next. The
+static text stays the same, so `undent` reuses the processed segments after the
+first render and keeps the hot path cheap.
+
+Multi-line wrappers have a different repetition pattern:
+
+```ts
+const snippet = `
+    SELECT id, name
+    FROM users
+`;
+
+undent`
+  query:
+    ${embed(snippet)}
+`;
+
+undent`
+  sql:
+        ${embed(snippet)}
+`;
+```
+
+Both calls use the same raw snippet, but not the same insertion column. Later
+lines therefore need a different amount of padding in each case:
+
+```text
+query:
+  SELECT id, name
+  FROM users
+
+sql:
+    SELECT id, name
+    FROM users
+```
+
+`undent` keeps those cases separate by using a few small caches with different
+boundaries instead of one global cache for everything:
+
+```text
+render shape
+   │
+   ├─ same tagged template call site
+   │      undent`Hello, ${name}!`
+   │            │
+   │            ▼
+   │      ┌──────────────────────────────────┐
+   │      │ processed-segment cache          │
+   │      │ key: TemplateStringsArray        │
+   │      └──────────────────────────────────┘
+   │
+   ├─ same wrapped aligned value
+   │      align(value)
+   │            │
+   │            ▼
+   │      ┌──────────────────────────────────┐
+   │      │ per-wrapper aligned-text cache   │
+   │      │ key: wrapper object identity     │
+   │      └──────────────────────────────────┘
+   │
+   └─ same embedded snippet at one column
+      embed(snippet)
+        │
+        ▼
+      ┌──────────────────────────────────┐
+      │ bounded shared embed cache       │
+      │ key: dedented text + exact pad   │
+      └──────────────────────────────────┘
+```
+
+The diagram shows the main idea: each kind of repeated work has its own cache
+boundary and its own key. That separation keeps repeated work fast while still
+preserving correctness.
+
+### Exact keys stop one layout from reusing another layout's result
+
+Cache bugs usually come from keys that are too broad.
+
+For `embed()`, a broad key would be wrong:
+
+```ts
+const snippet = `
+    a
+    b
+`;
+
+const narrow = undent`
+  x:
+    ${embed(snippet)}
+`;
+
+const wide = undent`
+  x:
+          ${embed(snippet)}
+`;
+```
+
+Expected output:
+
+```text
+narrow:
+x:
+  a
+  b
+
+wide:
+x:
+        a
+        b
+```
+
+If the cache used only the snippet text and ignored the exact pad string, the
+second render could accidentally reuse the first render's alignment. In this
+section, cache poisoning means exactly that kind of mistake: cached output for
+one layout gets incorrectly reused for a different layout.
+
+`undent` avoids that by using the dedented snippet text together with the exact
+pad string as the shared cache key.
+
+The main cache situations look like this:
+
+```text
+Situation                    What can go wrong             What undent does
+---------                    -----------------             ----------------
+Same template call site      Recomputing the same work     Cache by template identity
+Same embed, same column      Re-aligning identical text    Reuse cached aligned output
+Same embed, new column       Wrong reused indentation      Key includes exact pad string
+Many small distinct embeds   Memory growth or churn        Bound cache sizes + eviction
+Very large embeds            Large string retention        Skip the shared cache
+```
+
+### Separate cache boundaries preserve the difference between `align()` and `embed()`
+
+`align()` and `embed()` may start from the same raw string but they do not mean
+the same thing:
+
+```ts
+const value = "    a\n    b";
+
+const aligned = undent`
+  align:
+    ${align(value)}
+`;
+// "align:\n        a\n        b"
+
+const embedded = undent`
+  embed:
+    ${embed(value)}
+`;
+```
+
+Visible output with a left-edge marker:
+
+```text
+aligned:
+|align:
+|        a
+|        b
+
+embedded:
+|embed:
+|    a
+|    b
+```
+
+`align()` preserves the value's own indentation. `embed()` removes the value's
+own shared indentation first, then aligns the result. Sharing one global cache
+between those two behaviors would be wrong, so the shared cache is restricted
+to `embed()` wrappers only.
+
+### Bounded caches reduce memory pressure, but they do not create isolation
+
+The caches in `undent` are memoization helpers, not trust boundaries.
+
+That means:
+
+- exact keys prevent wrong-result reuse for different `embed()` layouts
+- wrapper-specific caching keeps `align()` and `embed()` from reusing the wrong
+  shape
+- bounded caches reduce memory pressure, but they do not turn cache usage into
+  a security boundary
+- any shared in-process cache can still leak small timing signals under a
+  strong enough threat model
+
+If your application treats timing differences or in-memory string retention as
+sensitive, treat cache sharing as part of your threat model. `undent` aims to
+keep the cache correct and bounded, not to provide isolation between untrusted
+tenants.
+
+### Benchmarks and tests keep the cache boundaries easy to verify
+
+The benchmark and test suite exercises the cache edges on purpose:
+
+- repeated hot-path tagged templates
+- repeated `embed()` wrappers at the same column
+- repeated `embed()` wrappers across many columns
+- churn from many distinct snippets
+- oversized snippets that bypass the shared cache
+
+That coverage exists to keep the tradeoff visible: the common repetitive path
+should stay fast, and the boundaries that protect correctness should stay easy
+to verify.
+
 ## API
 
 | Export                                             | Description                                                                |
