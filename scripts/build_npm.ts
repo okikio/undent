@@ -11,11 +11,6 @@
 import { build, emptyDir } from "jsr:@deno/dnt";
 import { format, parse } from 'jsr:@std/semver';
 import denoJson from "../deno.json" with { type: "json" };
-
-// semantic-release remains the release authority for GitHub tags and changelog
-// entries, so the tagged commit still carries the pre-release deno.json
-// version. npm publishing therefore takes the resolved release version from the
-// workflow and injects it here, while local builds still default to deno.json.
 const packageVersion = resolvePackageVersion();
 
 await emptyDir("./npm");

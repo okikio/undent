@@ -782,10 +782,6 @@ interface TrimSides {
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
 for automated versioning, GitHub releases, and changelog generation via
 [`semantic-release`](https://semantic-release.gitbook.io/semantic-release/).
-`semantic-release` only decides the release version, updates
-[`changelog.md`](./changelog.md), and creates the GitHub Release. Registry
-publishing stays in [`.github/workflows/publish.yml`](./.github/workflows/publish.yml),
-which publishes the tagged release to JSR and npm.
 
 | Prefix                       | Version effect |
 | ---------------------------- | -------------- |
