@@ -16,6 +16,12 @@ import {
   visualColumnWidth,
 } from './unicode.ts';
 
+function makeTSA(segments: string[]): TemplateStringsArray {
+  return Object.assign([...segments], {
+    raw: [...segments],
+  }) as unknown as TemplateStringsArray;
+}
+
 describe('unicode alignment helpers', () => {
   it('measures the last line with wide characters', () => {
     expect(unicodeColumnOffset('prefix\n界 ')).toBe(3);
@@ -140,6 +146,18 @@ describe('unicode alignment helpers', () => {
     expect(result).toBe('label: 界 a\n          b');
   });
 
+  it('aligns later lines to the same visual tab-stop column', () => {
+    const rawAligned = undent.with({ alignValues: true });
+    const visualAligned = undent.with({
+      alignValues: true,
+      columnOffset: createUnicodeColumnOffset({ tabWidth: 4 }),
+    });
+    const template = makeTSA(['\n\titems:\t', '\n']);
+
+    expect(rawAligned(template, 'alpha\nbeta')).toBe('items:\talpha\n       beta');
+    expect(visualAligned(template, 'alpha\nbeta')).toBe('items:\talpha\n        beta');
+  });
+
   it('affects wrapped align() values as well as alignValues', () => {
     const terminalUndent = undent.with({
       columnOffset: createUnicodeColumnOffset(),
@@ -150,6 +168,17 @@ describe('unicode alignment helpers', () => {
     `;
 
     expect(result).toBe('label: 界 alpha\n          beta');
+  });
+
+  it('handles prefixes that mix tabs and spaces before a wrapped value', () => {
+    const terminalUndent = undent.with({
+      columnOffset: createUnicodeColumnOffset({ tabWidth: 4 }),
+    });
+    const template = makeTSA(['\n\tprefix:\t ', '\n']);
+
+    expect(terminalUndent(template, align('alpha\nbeta'))).toBe(
+      'prefix:\t alpha\n         beta',
+    );
   });
 
   it('supports custom widthOf in end-to-end alignment', () => {

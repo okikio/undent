@@ -659,6 +659,11 @@ World
       expect(result).toBe("Hello\nWorld");
     });
 
+    it("treats mixed tabs and spaces as raw indent characters", () => {
+      const result = undent.string("\t  alpha\n  \tbeta");
+      expect(result).toBe("alpha\nbeta");
+    });
+
     it("handles deeply nested indentation", () => {
       const result = undent`
                 deeply
@@ -753,6 +758,11 @@ World
         less indented
       `;
       expect(result).toBe("  before x\nless indented");
+    });
+
+    it("template dedent also counts mixed tabs and spaces by raw characters", () => {
+      const result = undent(makeTSA(["\n\t  alpha\n  \tbeta\n"]));
+      expect(result).toBe("alpha\nbeta");
     });
   });
 
