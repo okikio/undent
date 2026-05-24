@@ -6,6 +6,12 @@
  * internal file instead of rewriting the public module.
  */
 
+/**
+ * Inclusive Unicode code point ranges whose East Asian Width property is
+ * classified as wide or fullwidth.
+ *
+ * Each tuple contains a `[start, end]` pair in hexadecimal code point form.
+ */
 export const EAST_ASIAN_WIDE_RANGES: ReadonlyArray<readonly [number, number]> = [
 	[0x1100, 0x115f],
 	[0x231a, 0x231b],
@@ -132,6 +138,12 @@ export const EAST_ASIAN_WIDE_RANGES: ReadonlyArray<readonly [number, number]> = 
 	[0x30000, 0x3fffd],
 ];
 
+/**
+ * Inclusive Unicode code point ranges whose East Asian Width property is
+ * classified as ambiguous.
+ *
+ * Each tuple contains a `[start, end]` pair in hexadecimal code point form.
+ */
 export const EAST_ASIAN_AMBIGUOUS_RANGES: ReadonlyArray<readonly [number, number]> = [
 	[0xa1, 0xa1],
 	[0xa4, 0xa4],

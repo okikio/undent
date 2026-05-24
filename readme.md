@@ -144,6 +144,14 @@ const config = undent`
 //   level: debug
 ```
 
+Tabs and spaces both count as indentation characters. `undent` compares mixed
+indentation by raw leading character count, not by visual tab stops, so a line
+that starts with `"\t  "` and a line that starts with `"  \t"` both contribute
+three indentation characters. If you need a fixed baseline in a mixed-indented
+template, normalize the source indentation first or use `undent.indent`. If
+your goal is visual alignment for interpolated values in a terminal or editor,
+use the Unicode-aware `columnOffset` helpers from `@okikio/undent/unicode`.
+
 ### Plain strings
 
 When you have a string that isn't a template literal — loaded from a file,
@@ -164,6 +172,10 @@ const clean = dedentString(`
     FROM users
 `);
 // "SELECT *\nFROM users"
+
+dedentString("\t  alpha\n  \tbeta");
+// "alpha\nbeta"
+// Mixed tabs/spaces are stripped by raw leading character count.
 ```
 
 ### Multi-line values
@@ -212,6 +224,37 @@ after the last newline. That is fast and stable for code generation, but it is
 not the same thing as visual width in a terminal or editor. Tabs, combining
 marks, emoji, and full-width characters can render at different visual columns
 than their UTF-16 length suggests.
+
+### Choosing the right mode
+
+Use the default mode when you want structural dedenting, the indent anchor when
+you want to choose the baseline yourself, and the Unicode helpers when aligned
+values need to follow rendered columns instead of raw string length.
+
+| Tool | Best for | What it measures |
+| --- | --- | --- |
+| `undent` | Normal template and string dedenting | Shared leading whitespace characters |
+| `undent.indent` | Templates that need an explicit left margin | The anchor's source indentation column |
+| `createUnicodeColumnOffset()` | Alignment in terminals/editors with tabs, emoji, or wide characters | Visual columns after the last newline |
+
+When you want alignment to follow rendered columns instead of raw string
+length, switch to the Unicode-aware mode from `@okikio/undent/unicode`:
+
+```ts
+import { undent } from "@okikio/undent";
+import { createUnicodeColumnOffset } from "@okikio/undent/unicode";
+
+const terminalUndent = undent.with({
+  alignValues: true,
+  columnOffset: createUnicodeColumnOffset({ tabWidth: 4 }),
+});
+
+terminalUndent`
+	items:\t${"alpha\nbeta"}
+`;
+// "items:\talpha\n        beta"
+// The second line lines up with the same visual column after the tab stop.
+```
 
 When the value itself carries baked-in indentation — a SQL snippet from another
 file, a code block from a constant — use `embed()`. It strips the value's own

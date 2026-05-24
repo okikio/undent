@@ -50,6 +50,15 @@
  * with {@link columnOffset}, and callers can override that policy with the
  * `columnOffset` option when they need Unicode-aware visual alignment.
  *
+ * Indent detection treats leading tabs and spaces as raw whitespace
+ * characters, not visual columns. A line that starts with `"\t  "` and a
+ * line that starts with `"  \t"` both have three leading indentation
+ * characters, so `undent` strips three characters from each. If you need an
+ * explicit baseline in mixed-indentation templates, normalize the source
+ * indentation first or use {@link indent}. If you need visual-column
+ * alignment for interpolated values, pass a Unicode-aware `columnOffset`
+ * function from the `@okikio/undent/unicode` entry point.
+ *
  * @module
  */
 
@@ -1375,6 +1384,10 @@ function processStrings(
  * The key safety rule is simple: only leading spaces and tabs are removed.
  * The text itself is left alone.
  *
+ * Spaces and tabs count as individual indentation characters here. The scan
+ * does not expand tabs to visual tab stops, so mixed prefixes are compared by
+ * raw leading character count rather than rendered column width.
+ *
  * Two-pass approach:
  *
  * 1. **Scan** — walk each line, count leading spaces/tabs on non-blank
@@ -1411,6 +1424,15 @@ function processStrings(
  * dedentString("    deep\n  shallow");
  * // "  deep\nshallow"
  * // 2 spaces stripped (the minimum); "deep" keeps its extra 2.
+ * ```
+ *
+ * @example Mixed tabs and spaces are counted by raw characters
+ * ```ts
+ * import { dedentString } from "@okikio/undent";
+ *
+ * dedentString("\t  alpha\n  \tbeta");
+ * // "alpha\nbeta"
+ * // Each line starts with 3 indentation characters, so all 3 are stripped.
  * ```
  */
 export function dedentString(

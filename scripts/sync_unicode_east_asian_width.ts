@@ -442,18 +442,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function renderConstantsFile(parsed: ParsedEastAsianWidth): string {
 	return [
-    undent.with({ trim: { trailing: "one" }})`
-      /**
-       * Internal East Asian Width lookup tables generated from Unicode upstream.
-       *
-       * \`unicode.ts\` re-exports these tables as part of the public API, but the
-       * generated data itself lives here so maintenance scripts can update one small
-       * internal file instead of rewriting the public module.
-       */
+		undent.with({ trim: { trailing: 'one' } })`
+			/**
+			 * Internal East Asian Width lookup tables generated from Unicode upstream.
+			 *
+			 * \`unicode.ts\` re-exports these tables as part of the public API, but the
+			 * generated data itself lives here so maintenance scripts can update one small
+			 * internal file instead of rewriting the public module.
+			 */
 
-    `,
+			/**
+			 * Inclusive Unicode code point ranges whose East Asian Width property is
+			 * classified as wide or fullwidth.
+			 *
+			 * Each tuple contains a \`[start, end]\` pair in hexadecimal code point form.
+			 */
+		`,
 		renderTable('EAST_ASIAN_WIDE_RANGES', parsed.wideRanges),
 		'',
+		undent.with({ trim: { trailing: 'one' } })`
+			/**
+			 * Inclusive Unicode code point ranges whose East Asian Width property is
+			 * classified as ambiguous.
+			 *
+			 * Each tuple contains a \`[start, end]\` pair in hexadecimal code point form.
+			 */
+		`,
 		renderTable('EAST_ASIAN_AMBIGUOUS_RANGES', parsed.ambiguousRanges),
 		'',
 		'// End of generated East Asian Width tables.',
