@@ -325,8 +325,9 @@ What you can and should do manually:
 1. Merge release-worthy commits to `main` using Conventional Commit subjects.
 2. `release.yml` runs `deno ci` and then `semantic-release` on pushes to
    `main`.
-3. When a release is warranted, `semantic-release` updates `changelog.md`,
-   creates the release commit and tag, and publishes the GitHub Release.
+3. When a release is warranted, `semantic-release` updates `deno.json` and
+   `changelog.md`, creates the release commit and tag, and publishes the GitHub
+   Release.
 4. The published release event triggers `publish.yml`, which runs `deno ci`
    against the tagged commit and then publishes to **JSR**
    (`deno publish --set-version <version>`) and **npm**
