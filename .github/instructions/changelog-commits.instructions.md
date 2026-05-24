@@ -281,8 +281,9 @@ required so tooling reliably detects and surfaces the change.
 ### How semantic-release reads commits
 
 This project uses `semantic-release` to calculate versions, create GitHub
-releases, and update `changelog.md` from Conventional Commits. The default
-rules for this repo are:
+releases, and update `changelog.md` from Conventional Commits. Registry
+publishing stays outside `semantic-release` in `publish.yml`. The default rules
+for this repo are:
 
 - `fix` → patch version bump
 - `feat` → minor version bump
@@ -329,7 +330,8 @@ What you can and should do manually:
    creates the release commit and tag, and publishes the GitHub Release.
 4. The published release event triggers `publish.yml`, which runs `deno ci`
    against the tagged commit and then publishes to **JSR**
-   (`deno publish --set-version <version>`) and **npm**
+   (`deno eval` rewrites `deno.json.version` in the ephemeral checkout, then
+   `deno publish`) and **npm**
    (`RELEASE_VERSION=<version> deno task build:npm` followed by
    `npm publish`) in parallel. Re-running a publish job for an already-published
    version should be safe.
@@ -338,7 +340,8 @@ What you can and should do manually:
 
    To publish manually:
    - Verify the release commit: `deno task release:verify`
-   - JSR: `deno ci && deno publish --set-version <version>`
+   - JSR: update `deno.json.version` to the release version, then run
+     `deno ci && deno publish`
    - npm: `deno ci && RELEASE_VERSION=<version> deno task build:npm && cd npm && npm publish --access public`
 
 ### Writing changelog entries
