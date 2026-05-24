@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/okikio/undent/compare/undent@0.3.0...undent@0.3.1) (2026-05-24)
+
+
+### Performance Improvements
+
+* **embed:** Avoid re-aligning identical snippet-column pairs ([30672fc](https://github.com/okikio/undent/commit/30672fc6c6f2c153eca220d2c7a4157acde41b7f))
+
 # [0.3.0](https://github.com/okikio/undent/compare/undent@0.2.1...undent@0.3.0) (2026-05-22)
 
 
