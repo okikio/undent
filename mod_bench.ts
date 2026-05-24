@@ -945,6 +945,25 @@ summary(() => {
     }
     do_not_optimize(last);
   });
+
+  bench("aligned cache: recreated align wrapper same column ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(sameColumnTsa, align("alpha\nbeta\ngamma"));
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("aligned cache: recreated align wrapper varying columns ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(
+        varyingColumnTsas[i % varyingColumnTsas.length]!,
+        align("alpha\nbeta\ngamma"),
+      );
+    }
+    do_not_optimize(last);
+  }).gc("inner");
 });
 
 summary(() => {
@@ -980,6 +999,9 @@ summary(() => {
 //   embed-prep work out of the loop for all libraries.
 // - "hot" inline group includes embed-prep work inside the loop for all
 //   libraries, measuring end-to-end cost.
+// - "cache safety" groups model eviction-heavy or attacker-shaped workloads:
+//   many distinct snippets, many insertion columns, and oversized snippets that
+//   intentionally bypass the shared aligned-text cache.
 summary(() => {
   bench("embed hot: undent ×100", () => {
     const v = embed(INDENTED_1K);
@@ -1054,6 +1076,181 @@ summary(() => {
     }
     do_not_optimize(last);
   });
+});
+
+summary(() => {
+  const sameColumnTsa = makeInlineTSA("code: ");
+  const varyingColumnTsas = Array.from(
+    { length: 32 },
+    (_, i) => makeInlineTSA(`${" ".repeat(i)}code: `),
+  );
+
+  bench("embed cache: recreated wrapper same column ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(sameColumnTsa, embed(INDENTED_1K));
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed cache: recreated wrapper varying columns ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(
+        varyingColumnTsas[i % varyingColumnTsas.length]!,
+        embed(INDENTED_1K),
+      );
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+});
+
+summary(() => {
+  const sameColumnTsa = makeInlineTSA("code: ");
+  const varyingColumnTsas = Array.from(
+    { length: 32 },
+    (_, i) => makeInlineTSA(`${" ".repeat(i)}code: `),
+  );
+  const distinctInputs = Array.from(
+    { length: 100 },
+    (_, i) => `${INDENTED_1K}\n        distinct_${i}`,
+  );
+  const oversizedInput = makeLines(5_000, "        ");
+
+  bench("embed cache safety: distinct snippets same column ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(sameColumnTsa, embed(distinctInputs[i]!));
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed cache safety: distinct snippets varying columns ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = undent(
+        varyingColumnTsas[i % varyingColumnTsas.length]!,
+        embed(distinctInputs[i]!),
+      );
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed cache safety: oversized snippet varying columns ×25", () => {
+    let last = "";
+    for (let i = 0; i < 25; i++) {
+      last = undent(
+        varyingColumnTsas[i % varyingColumnTsas.length]!,
+        embed(oversizedInput),
+      );
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+});
+
+lineplot(() => {
+  // deno-lint-ignore no-explicit-any
+  bench("aligned cache: recreated wrapper varying $columns columns", function* (state: any) {
+    const columns = state.get("columns");
+    const varyingColumnTsas = Array.from(
+      { length: columns },
+      (_, i) => makeInlineTSA(`${" ".repeat(i)}code: `),
+    );
+
+    yield {
+      [0]() {
+        return varyingColumnTsas;
+      },
+
+      bench(tsas: TemplateStringsArray[]) {
+        let last = "";
+        for (let i = 0; i < 100; i++) {
+          last = undent(tsas[i % tsas.length]!, align("alpha\nbeta\ngamma"));
+        }
+        do_not_optimize(last);
+      },
+    };
+  }).range("columns", 1, 64).gc("inner");
+
+  // deno-lint-ignore no-explicit-any
+  bench("embed cache: recreated wrapper varying $columns columns", function* (state: any) {
+    const columns = state.get("columns");
+    const varyingColumnTsas = Array.from(
+      { length: columns },
+      (_, i) => makeInlineTSA(`${" ".repeat(i)}code: `),
+    );
+
+    yield {
+      [0]() {
+        return varyingColumnTsas;
+      },
+
+      bench(tsas: TemplateStringsArray[]) {
+        let last = "";
+        for (let i = 0; i < 100; i++) {
+          last = undent(tsas[i % tsas.length]!, embed(INDENTED_1K));
+        }
+        do_not_optimize(last);
+      },
+    };
+  }).range("columns", 1, 64).gc("inner");
+});
+
+summary(() => {
+  bench("embed prep: undent same input ×100", () => {
+    let last;
+    for (let i = 0; i < 100; i++) {
+      last = embed(INDENTED_1K);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed prep: dedent same input ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmDedent(INDENTED_1K);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed prep: outdent same input ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmOutdent.string(INDENTED_1K);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+});
+
+summary(() => {
+  const uniqueInputs = Array.from(
+    { length: 100 },
+    (_, i) => `${INDENTED_1K}\n        unique_${i}`,
+  );
+
+  bench("embed prep: undent unique ×100", () => {
+    let last;
+    for (let i = 0; i < 100; i++) {
+      last = embed(uniqueInputs[i]!);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed prep: dedent unique ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmDedent(uniqueInputs[i]!);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
+
+  bench("embed prep: outdent unique ×100", () => {
+    let last = "";
+    for (let i = 0; i < 100; i++) {
+      last = npmOutdent.string(uniqueInputs[i]!);
+    }
+    do_not_optimize(last);
+  }).gc("inner");
 });
 
 summary(() => {

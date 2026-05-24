@@ -272,9 +272,9 @@ export interface Undent {
 /**
  * Fully resolved configuration where every field is required.
  *
- * This is what `undent` uses internally after merging defaults with
- * user overrides. Exported for consumers building custom configuration
- * pipelines via {@link resolveOptions}.
+ * `undent` works with this shape internally after merging defaults with user
+ * overrides. Exported for consumers building custom configuration pipelines
+ * via {@link resolveOptions}.
  */
 export interface ResolvedOptions {
   /** Indent detection strategy: `"common"` scans all lines, `"first"` uses the first content line. */
@@ -344,6 +344,15 @@ export const ALIGNED: unique symbol = Symbol("undent.aligned");
  */
 const ALIGNED_TEXT_CACHE = new WeakMap<AlignedValue, Map<string, string>>();
 
+/**
+ * Track which wrapped values originate from {@link embed}.
+ *
+ * `align()` and `embed()` both produce {@link AlignedValue}, but only
+ * `embed()` is allowed to participate in the shared text cache. This side set
+ * lets the join path distinguish them without mutating the public wrapper.
+ */
+const EMBEDDED_VALUES = new WeakSet<AlignedValue>();
+
 // Character codes used in hot loops.
 // Hex is compact for low-level scanning, so we document each value:
 // - 0x09 = TAB      (decimal 9)
@@ -356,15 +365,97 @@ const CC_CR = 0x0d; // CR
 const CC_SPACE = 0x20; // SPACE
 
 /**
- * Bounded memoization for `embed(value)`.
+ * Caches used by `embed()` and wrapped-value alignment.
  *
- * `embed` is commonly used with repeated static snippets (SQL, code blocks,
- * config fragments). Caching the dedented result avoids paying the
- * `dedentString(..., "all", "all")` cost repeatedly for identical inputs.
+ * `embed()` usually sees the same static snippets and the same few insertion
+ * columns over and over. These caches keep that path fast while staying
+ * bounded so varied or attacker-shaped inputs cannot grow memory without
+ * limit.
  */
 const EMBED_CACHE_MAX = 256;
+
+/**
+ * Cache canonical dedented text for repeated `embed(value)` calls.
+ *
+ * The key is the original source string and the value is that string after
+ * `dedentString(..., 'all', 'all')`. Keeping this separate from the aligned
+ * text cache means we can reuse the expensive strip step even when the same
+ * snippet later appears at different columns.
+ */
 const EMBED_CACHE = new Map<string, string>();
+
+/**
+ * Maximum number of insertion columns remembered per wrapper instance.
+ *
+ * Most wrapped values are rendered at one or two columns, so a tiny cap keeps
+ * the hot path fast without letting rarely reused columns accumulate forever.
+ */
 const ALIGNED_TEXT_CACHE_MAX = 8;
+
+// Per-wrapper alignment stays tiny because most values only appear at one or
+// two columns. `embed()` also gets a shared cache for small reused snippets.
+// That shared cache is keyed by exact dedented text and exact pad, scoped to
+// embed()-created wrappers only, and skipped for very large inputs.
+
+// Shared cache for aligned embed() output.
+//
+// Start with the simple picture: after embed() strips a snippet's own indent,
+// the same cleaned-up text often gets inserted at the same few columns again
+// and again. Instead of rebuilding that aligned text every time, we remember
+// it here.
+//
+// The cache stays narrow on purpose:
+// - only embed()-created values use it
+// - the lookup uses both the cleaned-up text and the exact pad string
+// - both cache layers have size caps
+// - very large inputs skip this cache entirely
+//
+// That keeps the common path fast without letting shared cache state grow
+// without bound or accidentally reuse one wrapper's result for another shape.
+const SHARED_ALIGNED_TEXT_CACHE_MAX = 128;
+const SHARED_ALIGNED_PAD_CACHE_MAX = 32;
+const SHARED_ALIGNED_TEXT_CACHE = new Map<string, Map<string, string>>();
+
+/**
+ * Return a cached shared alignment result for one exact `(text, pad)` pair.
+ *
+ * Think of this as the simple read step for the shared embed cache: given the
+ * cleaned-up text and the amount of left padding we need, do we already have
+ * the finished aligned string?
+ */
+function getSharedAlignedText(text: string, pad: string): string | undefined {
+  const cache = SHARED_ALIGNED_TEXT_CACHE.get(text);
+  return cache?.get(pad);
+}
+
+/**
+ * Store one shared alignment result, evicting the oldest entries when either
+ * cache layer hits its cap.
+ *
+ * The cache has two levels:
+ * - outer map: one entry per cleaned-up embed snippet
+ * - inner map: one entry per padding string for that snippet
+ *
+ * If either level grows past its limit, the oldest remembered entry drops out.
+ */
+function setSharedAlignedText(text: string, pad: string, aligned: string): void {
+  let cache = SHARED_ALIGNED_TEXT_CACHE.get(text);
+  if (!cache) {
+    if (SHARED_ALIGNED_TEXT_CACHE.size >= SHARED_ALIGNED_TEXT_CACHE_MAX) {
+      const oldest = SHARED_ALIGNED_TEXT_CACHE.keys().next().value;
+      if (oldest !== undefined) SHARED_ALIGNED_TEXT_CACHE.delete(oldest);
+    }
+    cache = new Map<string, string>();
+    SHARED_ALIGNED_TEXT_CACHE.set(text, cache);
+  }
+
+  if (cache.size >= SHARED_ALIGNED_PAD_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+
+  cache.set(pad, aligned);
+}
 
 /**
  * A branded wrapper that tells `undent` to pad subsequent lines of
@@ -436,8 +527,17 @@ export function align(value: unknown): AlignedValue {
  *     WHERE  active = true           WHERE  active = true
  * ```
  *
- * Results are cached (up to 256 entries), so repeated calls with the
- * same string are essentially free.
+ * Repeated calls to `embed()` reuse bounded internal caches for two different
+ * steps: the dedented snippet itself and, for small multi-line snippets,
+ * the aligned text used when the same snippet is inserted at the same column.
+ * Those caches are keyed by exact string content, capped to bound retention,
+ * and skipped for very large inputs.
+ *
+ * These caches improve hot-path rendering, but they are not a security
+ * boundary. Distinct snippets, very large snippets, or many insertion columns
+ * can still miss or evict cache entries. The observable behavior stays the
+ * same because `embed()` always recomputes the exact aligned string when a
+ * cache entry is absent.
  *
  * @param value - A string with baked-in indentation to strip.
  * @returns A branded {@link AlignedValue} wrapper.
@@ -458,11 +558,43 @@ export function align(value: unknown): AlignedValue {
  * `;
  * // "query:\n  SELECT id, name\n  FROM   users\n  WHERE  active = true"
  * ```
+ *
+ * @example Embedding the same snippet at different columns without changing output
+ * ```ts
+ * import { undent, embed } from "@okikio/undent";
+ *
+ * const block = "    alpha\n    beta";
+ *
+ * const short = undent`
+ *   list:
+ *     ${embed(block)}
+ * `;
+ *
+ * const wide = undent`
+ *   padding:
+ *           ${embed(block)}
+ * `;
+ *
+ * // short === "list:\n  alpha\n  beta"
+ * // wide  === "padding:\n          alpha\n          beta"
+ * ```
  */
 export function embed(value: string): AlignedValue {
-  return { [ALIGNED]: true, value: dedentStringForEmbed(value) };
+  const aligned: AlignedValue = {
+    [ALIGNED]: true,
+    value: dedentStringForEmbed(value),
+  };
+  EMBEDDED_VALUES.add(aligned);
+  return aligned;
 }
 
+/**
+ * Compute or retrieve the canonical dedented text used by {@link embed}.
+ *
+ * `embed()` always strips the snippet's own indentation before alignment.
+ * This helper keeps the strip step, size cutoff, and cache policy in one
+ * place.
+ */
 function dedentStringForEmbed(value: string): string {
   // Step 1: fast-path lookup for repeated snippets.
   // Most embed() calls reuse static SQL/code blocks, so this avoids
@@ -559,7 +691,7 @@ export function createUndent(options: UndentOptions = {}): Undent {
  * Default instance: strips the common indent across all lines and
  * trims all leading/trailing blank lines.
  *
- * This is also the default export.
+ * Also exported as the module's default export.
  *
  * @example Stripping structural indent from a template
  * ```ts
@@ -612,21 +744,46 @@ export default undent;
 //
 // Each Undent instance is a plain function with `.with()`, `.string()`,
 // and `.indent` attached as properties. UndentState carries the resolved
-// options, a self-reference (for anchor detection), and a WeakMap cache
+// options, a tag reference used for anchor detection, and a WeakMap cache
 // for processed template segments.
 // ==========================================================================
 
+/**
+ * Private runtime state carried by one concrete `undent` instance.
+ *
+ * Each instance closes over this object rather than storing mutable fields on
+ * exported functions directly. That keeps the public surface small while still
+ * letting `.with()` derive new instances from fully resolved options.
+ */
 interface UndentState {
+  /** Self-reference to the callable tag function, used for anchor detection. */
   tag: Undent | null;
+  /** Fully resolved options that govern this instance's behavior. */
   opts: ResolvedOptions;
+  /** Per-call-site cache of processed template segments. */
   cache: WeakMap<TemplateStringsArray, CacheEntry>;
 }
 
+/**
+ * Cached segment variants for one template literal call site.
+ *
+ * The same `TemplateStringsArray` can be rendered in normal mode or anchored
+ * mode depending on whether `${indent}` appears as the first interpolation.
+ */
 interface CacheEntry {
+  /** Segments processed without an anchor baseline. */
   normal?: string[];
+  /** Segments processed with the first interpolation acting as the anchor. */
   anchored?: string[];
 }
 
+/**
+ * Build a callable `Undent` function from fully resolved options.
+ *
+ * The returned value is both a tag function and an object with `.with()`,
+ * `.string()`, and `.indent`. This helper assembles that runtime shape once so
+ * the rest of the module can work with a single internal state object.
+ */
 function createUndentFromResolved(opts: ResolvedOptions): Undent {
   const state: UndentState = {
     tag: null,
@@ -659,10 +816,21 @@ function createUndentFromResolved(opts: ResolvedOptions): Undent {
   return state.tag;
 }
 
+/**
+ * Implement `.with()` by merging overrides onto an existing instance.
+ */
 function undentWith(state: UndentState, next: UndentOptions): Undent {
   return createUndentFromResolved(resolveOptions(state.opts, next));
 }
 
+/**
+ * Implement `.string()` for a specific instance.
+ *
+ * Plain strings do not have template structure, so they always flow through
+ * `dedentString()`. Instance-level newline normalization happens afterward,
+ * matching the tag path's rule that normalization only affects static
+ * template segments.
+ */
 function undentStringMethod(state: UndentState, input: string): string {
   const { trimLeading, trimTrailing, newline } = state.opts;
   let out = dedentString(input, trimLeading, trimTrailing);
@@ -833,7 +1001,7 @@ function getProcessedSegments(
 }
 
 /**
- * Detect whether this is an anchored call and return the anchor's
+ * Detect whether a call is anchored and return the anchor's
  * column position. Returns -1 if not anchored.
  *
  * An anchored call uses the indent symbol (or the tag itself, for
@@ -1066,23 +1234,32 @@ function trailingIndentInSegment(segment: string): number {
 
 // --- Segment processing --------------------------------------------------
 
+// Regexes for newline normalization and wrapper-line trimming in processed
+// template segments.
 const ANY_NEWLINE = /\r\n|\r|\n/g;
+
+/** Remove at most one leading blank wrapper line from the first segment. */
 const LEADING_ONE = /^[ \t]*(?:\r\n|\r|\n)/;
+
+/** Remove at most one trailing blank wrapper line from the last segment. */
 const TRAILING_ONE = /(?:\r\n|\r|\n)[ \t]*$/;
+
+/** Remove every leading blank wrapper line from the first segment. */
 const LEADING_ALL = /^(?:[ \t]*(?:\r\n|\r|\n))+/;
+
+/** Remove every trailing blank wrapper line from the last segment. */
 const TRAILING_ALL = /(?:(?:\r\n|\r|\n)[ \t]*)+$/;
 
 /**
  * Cache strip-indentation regexes keyed by indent width.
  *
- * Why: compiling `new RegExp(...)` on every `.string()`/tag call adds
- * avoidable overhead on hot paths. The pattern is deterministic for a
- * given indent width, so we compile once and reuse.
+ * This helper needs a regex that means: "after each newline, remove up to this
+ * many spaces or tabs." Building that regex over and over would be wasted
+ * work, so we build it once for each indent width and reuse it.
  *
- * Bounded at 128 entries. Real-world indent widths cluster around 2–8,
- * so the cap is rarely reached. Without a bound, adversarially varied
- * indent widths (e.g. server-rendered user-supplied code blocks) could
- * grow the cache without limit.
+ * The cache still has a size limit. In normal code, indent widths tend to be
+ * small and repetitive. If someone feeds in lots of unusual indent widths, the
+ * oldest regexes simply fall out of the cache instead of piling up forever.
  */
 const STRIP_REGEX_CACHE_MAX = 128;
 const STRIP_REGEX_CACHE = new Map<number, RegExp>();
@@ -1113,16 +1290,18 @@ function getStripIndentRegex(indentCount: number): RegExp {
  * Process an array of template segments through the strip → trim →
  * normalize pipeline.
  *
- * **Stripping** uses a regex `(\r\n|\r|\n)[ \t]{0,N}` where N is the
- * detected indent. The `{0,N}` quantifier is key: it only consumes
- * whitespace, and at most N characters of it, so content is never
- * destroyed even if a line has less indent than expected.
+ * Start with the high-level picture:
+ * - strip the shared indent from each segment
+ * - trim blank wrapper lines at the edges
+ * - optionally rewrite newline sequences
  *
- * **Trimming** removes wrapper blank lines from the first and last
- * segments using the configured trim mode.
+ * The strip step uses a regex that says: "after each newline, remove up to
+ * N spaces or tabs." The "up to" part matters because it means a line only
+ * loses whitespace that is actually there. Content is never chopped off just
+ * because one line is less indented than the others.
  *
- * **Normalization** replaces newline sequences in segments only.
- * Interpolated values are joined separately and never normalized.
+ * Newline normalization only touches template segments. Interpolated values
+ * are joined later and pass through unchanged.
  */
 function processStrings(
   strings: ReadonlyArray<string>,
@@ -1189,9 +1368,12 @@ function processStrings(
 /**
  * Strip common leading indentation from a plain string.
  *
- * This is the algorithm behind `.string()` and {@link embed}. It scans
- * every non-blank line for the smallest indent and strips it. Only
- * whitespace is ever removed — content is guaranteed safe.
+ * Plain strings go through the same core idea as `undent` template literals:
+ * find the smallest shared indent across non-blank lines, then remove that
+ * much leading whitespace.
+ *
+ * The key safety rule is simple: only leading spaces and tabs are removed.
+ * The text itself is left alone.
  *
  * Two-pass approach:
  *
@@ -1385,9 +1567,9 @@ function hasLeadingBlankLine(text: string): boolean {
 /**
  * Return true when the string ends with a blank line.
  *
- * This is the trailing-edge mirror of hasLeadingBlankLine(). It scans backward
- * through optional spaces/tabs and reports whether the first non-horizontal
- * whitespace byte is a newline sequence.
+ * Trailing-edge counterpart to hasLeadingBlankLine(). Scan backward through
+ * optional spaces/tabs and report whether the first non-horizontal whitespace
+ * byte is a newline sequence.
  */
 function hasTrailingBlankLine(text: string): boolean {
   for (let i = text.length - 1; i >= 0; i--) {
@@ -1617,7 +1799,8 @@ export function alignText(text: string, pad: string): string {
   const len = text.length;
   let i = 0;
   let last = 0;
-  let parts: string[] | null = null;
+  let out = "";
+  let changed = false;
 
   while (i < len) {
     const c = text.charCodeAt(i);
@@ -1641,19 +1824,18 @@ export function alignText(text: string, pad: string): string {
     }
 
     if (hasContent) {
-      if (parts === null) parts = [];
       // Copy unchanged span up to the line start, inject padding,
       // then copy the line content. This keeps transformations local.
-      parts.push(text.slice(last, lineStart), pad, text.slice(lineStart, j));
+      out += text.slice(last, lineStart) + pad + text.slice(lineStart, j);
       last = j;
+      changed = true;
     }
 
     i = j;
   }
 
-  if (parts === null) return text;
-  parts.push(text.slice(last));
-  return parts.join("");
+  if (!changed) return text;
+  return out + text.slice(last);
 }
 
 /** Return true if text contains any supported newline sequence. */
@@ -1697,6 +1879,12 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
     return text;
   }
 
+  const useSharedCache = EMBEDDED_VALUES.has(value) && text.length <= 64 * 1024;
+  if (useSharedCache) {
+    const sharedHit = getSharedAlignedText(text, pad);
+    if (sharedHit !== undefined) return sharedHit;
+  }
+
   let cache = ALIGNED_TEXT_CACHE.get(value);
   if (cache) {
     const hit = cache.get(pad);
@@ -1716,6 +1904,9 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
   }
 
   cache.set(pad, aligned);
+  if (useSharedCache) {
+    setSharedAlignedText(text, pad, aligned);
+  }
   return aligned;
 }
 
@@ -1736,7 +1927,7 @@ function getAlignedWrappedText(value: AlignedValue, pad: string): string {
  * reconstructed with {@link rejoinLines}.
  *
  * Pre-counts newlines to allocate arrays exactly, avoiding repeated
- * resizing. On 1K-line inputs this is ~2x faster than regex split.
+ * resizing. On 1K-line inputs, the approach is ~2x faster than regex split.
  *
  * @param text - The string to split.
  * @returns An object with `lines` and `seps` arrays.

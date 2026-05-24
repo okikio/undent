@@ -44,6 +44,13 @@ function makeTSA(segmentCount: number, indent = "    "): TemplateStringsArray {
   }) as unknown as TemplateStringsArray;
 }
 
+/** Build a one-interpolation template strings array with a fixed inline prefix. */
+function makeInlineTSA(prefix: string): TemplateStringsArray {
+  return Object.assign([prefix, ""], {
+    raw: [prefix, ""],
+  }) as unknown as TemplateStringsArray;
+}
+
 /**
  * Read current heap-used bytes. Returns `null` when the runtime's
  * memory API is unavailable, so callers can skip assertions gracefully.
@@ -228,6 +235,30 @@ describe("memory regression", () => {
       },
       2_000,
       1024,
+    );
+  });
+
+  it("embed() shared-cache churn stays bounded across distinct snippets and columns", () => {
+    let i = 0;
+    const snippets = Array.from(
+      { length: 192 },
+      (_, j) => `${makeLines(200, "        ")}\n        tail ${j}`,
+    );
+    const tsas = Array.from(
+      { length: 64 },
+      (_, j) => makeInlineTSA(`${" ".repeat(j)}code: `),
+    );
+
+    assertNoLeak(
+      () => {
+        const snippet = snippets[i % snippets.length]!;
+        const tsa = tsas[i % tsas.length]!;
+        undent(tsa, embed(snippet));
+        i++;
+      },
+      1_000,
+      2_048,
+      250,
     );
   });
 });

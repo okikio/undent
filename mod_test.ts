@@ -2092,6 +2092,99 @@ World
         expect(b).toBe(`template-b: ${i * 2}`);
       }
     });
+
+    it("embed shared cache does not bleed across insertion columns", () => {
+      const snippet = "    alpha\n    beta";
+
+      function renderShort(value: string) {
+        return undent`
+          short:
+            ${embed(value)}
+        `;
+      }
+
+      function renderWide(value: string) {
+        return undent`
+          wide:
+                  ${embed(value)}
+        `;
+      }
+
+      for (let i = 0; i < 25; i++) {
+        expect(renderShort(snippet)).toBe("short:\n  alpha\n  beta");
+        expect(renderWide(snippet)).toBe("wide:\n        alpha\n        beta");
+      }
+    });
+
+    it("align and embed stay isolated even when the raw text matches", () => {
+      const raw = "    alpha\n    beta";
+
+      function renderAligned(value: string) {
+        return undent`
+          data:
+            ${align(value)}
+        `;
+      }
+
+      function renderEmbedded(value: string) {
+        return undent`
+          data:
+            ${embed(value)}
+        `;
+      }
+
+      for (let i = 0; i < 25; i++) {
+        expect(renderAligned(raw)).toBe("data:\n      alpha\n      beta");
+        expect(renderEmbedded(raw)).toBe("data:\n  alpha\n  beta");
+      }
+    });
+
+    it("shared cache eviction across many embedded snippets keeps outputs correct", () => {
+      const snippets = Array.from(
+        { length: 192 },
+        (_, i) => `    value ${i}\n    next ${i}`,
+      );
+
+      for (const [i, snippet] of snippets.entries()) {
+        const result = undent`
+          item:
+            ${embed(snippet)}
+        `;
+        expect(result).toBe(`item:\n  value ${i}\n  next ${i}`);
+      }
+
+      expect(undent`
+        item:
+          ${embed(snippets[0]!)}
+      `).toBe("item:\n  value 0\n  next 0");
+      expect(undent`
+        item:
+          ${embed(snippets[191]!)}
+      `).toBe("item:\n  value 191\n  next 191");
+    });
+
+    it("large embedded snippets above the shared-cache cutoff stay correct", () => {
+      const large = Array.from(
+        { length: 5_000 },
+        (_, i) => `        row ${i}`,
+      ).join("\n");
+
+      for (let i = 0; i < 5; i++) {
+        const short = undent`
+          short:
+            ${embed(large)}
+        `;
+        const wide = undent`
+          wide:
+                  ${embed(large)}
+        `;
+
+        expect(short.startsWith("short:\n  row 0\n  row 1")).toBe(true);
+        expect(short.includes("\n  row 4999")).toBe(true);
+        expect(wide.startsWith("wide:\n        row 0\n        row 1")).toBe(true);
+        expect(wide.includes("\n        row 4999")).toBe(true);
+      }
+    });
   });
 
   // =========================================================================
