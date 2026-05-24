@@ -1,0 +1,73 @@
+# Creates GitHub Releases from Conventional Commits on main.
+#
+# This workflow is intentionally single-purpose:
+#   push to main or manual dispatch
+#     -> deno task deps:ci validates the committed lockfile
+#     -> semantic-release decides whether a release is warranted
+#     -> semantic-release updates changelog.md, creates the tag, and publishes
+#        the GitHub Release
+#
+# Registry publishing happens in publish.yml after the GitHub Release is
+# published. Keeping release creation separate from registry publishing makes
+# both workflows easier to reason about and easier to retry safely.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.8.x
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26'
+
+      - name: Cache Deno deps
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Install locked dependencies
+        run: deno task deps:ci
+
+      - name: Configure git author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Create GitHub release
+        run: >-
+          npm exec --yes
+          --package=semantic-release
+          --package=@semantic-release/changelog
+          --package=@semantic-release/commit-analyzer
+          --package=@semantic-release/exec
+          --package=@semantic-release/git
+          --package=@semantic-release/github
+          --package=@semantic-release/release-notes-generator
+          -- semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

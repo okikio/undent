@@ -323,21 +323,23 @@ What you can and should do manually:
 ### Release workflow
 
 1. Merge release-worthy commits to `main` using Conventional Commit subjects.
-2. `publish.yml` runs `semantic-release` on pushes to `main`.
-3. When a release is warranted, `semantic-release` updates `deno.json` and
-   `changelog.md`, creates the release commit and tag, and publishes the GitHub
-   Release.
-4. The published release event triggers the same workflow's publish jobs, which
-   publish to **JSR** (`deno publish`) and **npm**
-   (`deno task build:npm` followed by `npm publish`) in parallel. Re-running a
-   publish job for an already-published version should be safe.
+2. `release.yml` runs `deno ci` and then `semantic-release` on pushes to
+   `main`.
+3. When a release is warranted, `semantic-release` updates `changelog.md`,
+   creates the release commit and tag, and publishes the GitHub Release.
+4. The published release event triggers `publish.yml`, which runs `deno ci`
+   against the tagged commit and then publishes to **JSR**
+   (`deno publish --set-version <version>`) and **npm**
+   (`RELEASE_VERSION=<version> deno task build:npm` followed by
+   `npm publish`) in parallel. Re-running a publish job for an already-published
+   version should be safe.
 5. If one registry publish fails after the GitHub Release already exists, use
-   the workflow's manual `publish-only` dispatch mode to retry the tagged
-   release.
+   `publish.yml`'s manual dispatch mode to retry the tagged release.
 
    To publish manually:
-   - JSR: `deno publish`
-   - npm: `deno task build:npm && cd npm && npm publish --access public`
+   - Verify the release commit: `deno task release:verify`
+   - JSR: `deno ci && deno publish --set-version <version>`
+   - npm: `deno ci && RELEASE_VERSION=<version> deno task build:npm && cd npm && npm publish --access public`
 
 ### Writing changelog entries
 

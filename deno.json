@@ -6,9 +6,14 @@
     "./unicode": "./unicode.ts"
   },
   "tasks": {
+    "lint": "deno lint",
+    "doc": "deno doc --lint mod.ts unicode.ts _unicode_constants.ts",
+    "deps:ci": "deno ci",
     "test": "deno test --trace-leaks --v8-flags=--expose-gc",
     "bench": "deno bench --allow-env=NODE_DISABLE_COLORS --v8-flags=--expose-gc",
     "build:npm": "deno run -A scripts/build_npm.ts",
+    "release:verify": "deno task deps:ci && deno task lint && deno task doc && deno task test && deno task bench && deno task build:npm",
+    "release:dry-run": "deno task deps:ci && deno task build:npm && deno publish --dry-run",
     "unicode:eaw:check": "deno run --allow-net=www.unicode.org --allow-env=NAPI_RS_NATIVE_LIBRARY_PATH,NAPI_RS_ENFORCE_VERSION_CHECK,NAPI_RS_FORCE_WASI --allow-ffi scripts/sync_unicode_east_asian_width.ts",
     "unicode:eaw:update": "deno run --allow-net=www.unicode.org --allow-env=NAPI_RS_NATIVE_LIBRARY_PATH,NAPI_RS_ENFORCE_VERSION_CHECK,NAPI_RS_FORCE_WASI --allow-ffi --allow-read=_unicode_constants.ts --allow-write=_unicode_constants.ts scripts/sync_unicode_east_asian_width.ts --write"
   },

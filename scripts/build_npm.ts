@@ -9,7 +9,10 @@
  * cleared on each run so stale artifacts never bleed through.
  */
 import { build, emptyDir } from "jsr:@deno/dnt";
+import { format, parse } from 'jsr:@std/semver';
 import denoJson from "../deno.json" with { type: "json" };
+
+const packageVersion = resolvePackageVersion();
 
 await emptyDir("./npm");
 
@@ -56,7 +59,7 @@ await build({
 
   package: {
     name: denoJson.name, // "@okikio/undent"
-    version: denoJson.version,
+    version: packageVersion,
     description:
       "Strip source-code indentation from template literals and strings. Works in Deno, Node.js, Bun, and browsers.",
     license: "MIT",
@@ -102,3 +105,21 @@ await build({
     Deno.copyFileSync("changelog.md", "npm/changelog.md");
   },
 });
+
+function resolvePackageVersion(): string {
+  const releaseVersion = Deno.env.get('RELEASE_VERSION');
+
+  if (!releaseVersion) {
+    return denoJson.version;
+  }
+
+  const parsedVersion = parse(releaseVersion);
+
+  if (!parsedVersion) {
+    throw new Error(
+      `Expected RELEASE_VERSION to be a valid semantic version, received: ${releaseVersion}`,
+    );
+  }
+
+  return format(parsedVersion);
+}
