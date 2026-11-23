@@ -5,6 +5,19 @@
     ".": "./mod.ts",
     "./unicode": "./unicode.ts"
   },
+  "imports": {
+    "@deno/dnt": "jsr:@deno/dnt@^0.44.0",
+    "@optique/core": "jsr:@optique/core@^1.4.0",
+    "@std/expect": "jsr:@std/expect@^1.0.20",
+    "@std/path": "jsr:@std/path@^1.1.6",
+    "@std/semver": "jsr:@std/semver@^1.0.8",
+    "@std/testing": "jsr:@std/testing@^1.0.21",
+    "dedent": "npm:dedent@^1.7.2",
+    "fast-check": "npm:fast-check@^4.11.0",
+    "mitata": "npm:mitata@^1.0.34",
+    "oxc-parser": "npm:oxc-parser@^0.159.0",
+    "outdent": "npm:outdent@^0.8.0"
+  },
   "tasks": {
     "lint": "deno lint",
     "doc": "deno doc --lint mod.ts unicode.ts _unicode_constants.ts",

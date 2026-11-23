@@ -19,7 +19,7 @@ it.
 **Every benchmark callback must wrap its return value:**
 
 ```ts
-import { bench, do_not_optimize } from "npm:mitata";
+import { bench, do_not_optimize } from "mitata";
 
 bench("undent: basic template", () => {
   do_not_optimize(undent`
@@ -105,8 +105,8 @@ Performance claims are meaningless without comparison. Every operation that
 overlaps with `npm:dedent` and `npm:outdent` must have a side-by-side benchmark:
 
 ```ts
-import dedent from "npm:dedent";
-import outdent from "npm:outdent";
+import dedent from "dedent";
+import outdent from "outdent";
 
 // Benchmark setup shared across all three
 const template = (tag) =>

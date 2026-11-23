@@ -1,7 +1,7 @@
 /**
  * Syncs the semantic-release version into deno.json before the release commit.
  */
-import { format, parse } from 'jsr:@std/semver';
+import { format, parse } from '@std/semver';
 
 const [version] = Deno.args;
 

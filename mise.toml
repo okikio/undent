@@ -1,4 +1,5 @@
+# Exact versions, so every machine and CI run uses the same tools. Renovate opens a PR when one is released.
 [tools]
-bun = "latest"
-deno = "latest"
-node = "latest"
+bun = "1.4.5"
+deno = "2.9.8"
+node = "26.13.1"

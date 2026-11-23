@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix no-unversioned-import
 /**
  * Builds the npm package from the Deno source using @deno/dnt.
  *
@@ -8,8 +7,8 @@
  * Output is written to ./npm/ and is gitignored. The directory is
  * cleared on each run so stale artifacts never bleed through.
  */
-import { build, emptyDir } from "jsr:@deno/dnt";
-import { format, parse } from 'jsr:@std/semver';
+import { build, emptyDir } from "@deno/dnt";
+import { format, parse } from '@std/semver';
 import denoJson from "../deno.json" with { type: "json" };
 const packageVersion = resolvePackageVersion();
 
