@@ -10,17 +10,18 @@ applyTo: "**/*_test.ts,**/*.test.ts"
 | Role                              | Import                                                                  |
 | --------------------------------- | ----------------------------------------------------------------------- |
 | Test runner                       | `deno test --trace-leaks --v8-flags=--expose-gc` (via `deno task test`) |
-| BDD structure (`describe` / `it`) | `jsr:@std/testing/bdd`                                                  |
-| Assertions                        | `jsr:@std/expect` (`expect`)                                            |
-| Property-based testing            | `npm:fast-check` (`fc`)                                                 |
-| Oracle competitors                | `npm:dedent`, `npm:outdent`                                             |
+| BDD structure (`describe` / `it`) | `@std/testing/bdd`                                                      |
+| Assertions                        | `@std/expect` (`expect`)                                                |
+| Property-based testing            | `fast-check` (`fc`)                                                     |
+| Oracle competitors                | `dedent`, `outdent`                                                     |
 
-Imports follow this pattern at the top of every test file:
+Imports use the bare names from the `imports` map in `deno.json`, which holds each version in one place so
+`deno outdated` and Renovate can update it. Add a new dependency there, not as a `jsr:` or `npm:` specifier in a file:
 
 ```ts
-import { describe, it } from "jsr:@std/testing/bdd";
-import { expect } from "jsr:@std/expect";
-import * as fc from "npm:fast-check";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import * as fc from "fast-check";
 ```
 
 Always run tests with `deno task test` — the flags `--trace-leaks` and

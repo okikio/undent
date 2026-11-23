@@ -1,7 +1,6 @@
-// deno-lint-ignore-file no-import-prefix no-unversioned-import
-import { describe, it } from "jsr:@std/testing/bdd";
-import { expect } from "jsr:@std/expect";
-import * as fc from "npm:fast-check";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
+import * as fc from "fast-check";
 import undent, {
   align,
   alignText,
@@ -30,8 +29,8 @@ import type {
 } from "./mod.ts";
 
 // Competitors for oracle tests
-import npmDedent from "npm:dedent";
-import { outdent as npmOutdent } from "npm:outdent";
+import npmDedent from "dedent";
+import { outdent as npmOutdent } from "outdent";
 
 // ---------------------------------------------------------------------------
 // Helpers

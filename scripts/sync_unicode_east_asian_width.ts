@@ -15,12 +15,12 @@
  * and compares SHA-256 digests before trusting the payload. That keeps the
  * mutable `latest` alias honest and gives failures a concrete release anchor.
  */
-import { object } from 'jsr:@optique/core/constructs';
-import { runParserSync } from 'jsr:@optique/core/facade';
-import { message } from 'jsr:@optique/core/message';
-import { option } from 'jsr:@optique/core/primitives';
-import { fromFileUrl } from 'jsr:@std/path/from-file-url';
-import { parseSync } from 'npm:oxc-parser@0.132.0';
+import { object } from '@optique/core/constructs';
+import { runParserSync } from '@optique/core/facade';
+import { message } from '@optique/core/message';
+import { option } from '@optique/core/primitives';
+import { fromFileUrl } from '@std/path/from-file-url';
+import { parseSync } from 'oxc-parser';
 
 import { undent } from '../mod.ts';
 

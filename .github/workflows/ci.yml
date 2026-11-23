@@ -17,13 +17,13 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.8.x
+          deno-version: 2.9.8
 
       - name: Cache Deno deps
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
@@ -42,11 +42,11 @@ jobs:
   #   name: Format
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v6
+  #     - uses: actions/checkout@v7
   #     - uses: denoland/setup-deno@v2
 
   #     - name: Cache Deno deps
-  #       uses: actions/cache@v5
+  #       uses: actions/cache@v6
   #       with:
   #         path: ~/.cache/deno
   #         key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
@@ -60,13 +60,13 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.8.x
+          deno-version: 2.9.8
 
       - name: Cache Deno deps
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
@@ -83,13 +83,13 @@ jobs:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.8.x
+          deno-version: 2.9.8
 
       - name: Cache Deno deps
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}

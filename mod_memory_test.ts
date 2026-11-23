@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix no-unversioned-import
 /**
  * Memory regression tests for @okikio/undent.
  *
@@ -17,8 +16,8 @@
  * assertion is skipped rather than failing on an unmeasurable quantity.
  */
 
-import { describe, it } from "jsr:@std/testing/bdd";
-import { expect } from "jsr:@std/expect";
+import { describe, it } from "@std/testing/bdd";
+import { expect } from "@std/expect";
 import undent, { align, embed } from "./mod.ts";
 
 // ---------------------------------------------------------------------------

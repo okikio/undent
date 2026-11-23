@@ -143,13 +143,13 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-publish.outputs.ref }}
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.8.x
+          deno-version: 2.9.8
 
       - name: Install locked dependencies
         run: deno task deps:ci
@@ -167,16 +167,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-publish.outputs.ref }}
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.8.x
+          deno-version: 2.9.8
 
       - name: Cache Deno deps
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
@@ -191,9 +191,9 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.resolve-publish.outputs.version }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '26'
+          node-version: '26.13.1'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Detect whether the npm package already exists

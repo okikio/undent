@@ -28,7 +28,6 @@
  * Memory regression tests live in mod_memory_test.ts and run as part
  * of `deno task test`.
  */
-// deno-lint-ignore-file no-import-prefix no-unversioned-import
 
 import {
   barplot,
@@ -38,7 +37,7 @@ import {
   lineplot,
   run,
   summary,
-} from "npm:mitata";
+} from "mitata";
 
 import undent, {
   align,
@@ -57,8 +56,8 @@ import {
 } from "./unicode.ts";
 
 // Competitors
-import npmDedent from "npm:dedent";
-import { outdent as npmOutdent } from "npm:outdent";
+import npmDedent from "dedent";
+import { outdent as npmOutdent } from "outdent";
 
 // dedent has built-in multiline interpolation alignment via `alignValues`.
 // Reuse a preconfigured instance to avoid counting withOptions() creation
